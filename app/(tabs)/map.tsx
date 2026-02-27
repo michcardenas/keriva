@@ -1,16 +1,17 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated } from 'react-native';
-import { MapPin, Phone, Clock, ArrowLeft, AlertCircle } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated, Platform } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { MapPin, Phone, Clock, ArrowLeft, AlertCircle, Locate } from 'lucide-react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
 
-const SANTIAGO_BOUNDS = {
-  minLat: 19.430,
-  maxLat: 19.480,
-  minLng: -70.720,
-  maxLng: -70.670,
+const SANTIAGO_CENTER = {
+  latitude: 19.4517,
+  longitude: -70.6970,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
 };
 
 type Pharmacy = {
@@ -28,6 +29,7 @@ type Pharmacy = {
 
 export default function MapScreen() {
   const router = useRouter();
+  const mapRef = useRef<MapView>(null);
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
   const [selectedPharmacy, setSelectedPharmacy] = useState<Pharmacy | null>(null);
@@ -47,6 +49,15 @@ export default function MapScreen() {
         tension: 50,
         friction: 8,
       }).start();
+
+      if (mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude: selectedPharmacy.latitude,
+          longitude: selectedPharmacy.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 500);
+      }
     } else {
       Animated.timing(slideAnim, {
         toValue: 300,
@@ -117,16 +128,6 @@ export default function MapScreen() {
     }
   }
 
-  const latLngToPosition = (lat: number, lng: number) => {
-    const x = ((lng - SANTIAGO_BOUNDS.minLng) / (SANTIAGO_BOUNDS.maxLng - SANTIAGO_BOUNDS.minLng)) * 100;
-    const y = ((SANTIAGO_BOUNDS.maxLat - lat) / (SANTIAGO_BOUNDS.maxLat - SANTIAGO_BOUNDS.minLat)) * 100;
-
-    return {
-      left: `${Math.max(5, Math.min(95, x))}%`,
-      top: `${Math.max(5, Math.min(95, y))}%`,
-    };
-  };
-
   const toggleFilter = (filter: string) => {
     if (selectedFilters.includes(filter)) {
       setSelectedFilters(selectedFilters.filter((f) => f !== filter));
@@ -135,13 +136,19 @@ export default function MapScreen() {
     }
   };
 
-  const handlePinPress = (pharmacy: Pharmacy) => {
+  const handleMarkerPress = (pharmacy: Pharmacy) => {
     console.log('Pharmacy selected:', pharmacy.name);
     setSelectedPharmacy(pharmacy);
   };
 
   const closePharmacyCard = () => {
     setSelectedPharmacy(null);
+  };
+
+  const centerOnUser = () => {
+    if (mapRef.current) {
+      mapRef.current.animateToRegion(SANTIAGO_CENTER, 500);
+    }
   };
 
   if (loading) {
@@ -155,11 +162,41 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        style={styles.map}
+        initialRegion={SANTIAGO_CENTER}
+        showsUserLocation
+        showsMyLocationButton={false}
+      >
+        {pharmacies.map((pharmacy) => (
+          <Marker
+            key={pharmacy.id}
+            coordinate={{
+              latitude: pharmacy.latitude,
+              longitude: pharmacy.longitude,
+            }}
+            title={pharmacy.name}
+            description={pharmacy.address}
+            onPress={() => handleMarkerPress(pharmacy)}
+            pinColor={pharmacy.isCheapest ? '#7ED957' : '#1A7A4A'}
+          />
+        ))}
+      </MapView>
+
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.push('/(tabs)')}
       >
         <ArrowLeft size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.centerButton}
+        onPress={centerOnUser}
+      >
+        <Locate size={20} color="#1A7A4A" />
       </TouchableOpacity>
 
       {error && (
@@ -169,74 +206,27 @@ export default function MapScreen() {
         </View>
       )}
 
-      <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapGrid}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <View key={i} style={styles.gridLine} />
-            ))}
-          </View>
-
-          {pharmacies.length === 0 ? (
-            <View style={styles.emptyMapState}>
-              <Text style={styles.emptyMapEmoji}>🏥</Text>
-              <Text style={styles.emptyMapText}>No hay farmacias disponibles</Text>
-            </View>
-          ) : (
-            pharmacies.map((pharmacy) => {
-              const position = latLngToPosition(pharmacy.latitude, pharmacy.longitude);
-              return (
-                <TouchableOpacity
-                  key={pharmacy.id}
-                  style={[styles.pin, { left: position.left, top: position.top }]}
-                  onPress={() => handlePinPress(pharmacy)}
-                >
-                  <View
-                    style={[
-                      styles.pinMarker,
-                      pharmacy.isCheapest && styles.pinMarkerCheapest,
-                      selectedPharmacy?.id === pharmacy.id && styles.pinMarkerSelected,
-                    ]}
-                  >
-                    <MapPin
-                      size={20}
-                      color={pharmacy.isCheapest ? '#0F1F17' : '#FFFFFF'}
-                      fill={pharmacy.isCheapest ? '#7ED957' : '#1A7A4A'}
-                    />
-                  </View>
-                  <View style={styles.pinLabel}>
-                    <Text style={styles.pinLabelText} numberOfLines={1}>
-                      {pharmacy.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-
-        <View style={styles.mapControls}>
-          <View style={styles.filterChipsContainer}>
-            {FILTERS.map((filter) => (
-              <TouchableOpacity
-                key={filter}
+      <View style={styles.mapControls}>
+        <View style={styles.filterChipsContainer}>
+          {FILTERS.map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[
+                styles.filterChip,
+                selectedFilters.includes(filter) && styles.filterChipActive,
+              ]}
+              onPress={() => toggleFilter(filter)}
+            >
+              <Text
                 style={[
-                  styles.filterChip,
-                  selectedFilters.includes(filter) && styles.filterChipActive,
+                  styles.filterChipText,
+                  selectedFilters.includes(filter) && styles.filterChipTextActive,
                 ]}
-                onPress={() => toggleFilter(filter)}
               >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    selectedFilters.includes(filter) && styles.filterChipTextActive,
-                  ]}
-                >
-                  {filter}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                {filter}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
@@ -251,7 +241,7 @@ export default function MapScreen() {
             <TouchableOpacity
               key={pharmacy.id}
               style={styles.resultCard}
-              onPress={() => handlePinPress(pharmacy)}
+              onPress={() => handleMarkerPress(pharmacy)}
             >
               <View style={styles.resultLeft}>
                 <View
@@ -338,6 +328,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F1F17',
   },
+  map: {
+    flex: 1,
+  },
   backButton: {
     position: 'absolute',
     top: 60,
@@ -355,72 +348,26 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  mapContainer: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    backgroundColor: '#1A2E23',
-    position: 'relative',
-  },
-  mapGrid: {
-    flex: 1,
-    opacity: 0.1,
-  },
-  gridLine: {
-    height: 1,
-    backgroundColor: '#7ED957',
-    marginVertical: 20,
-  },
-  pin: {
+  centerButton: {
     position: 'absolute',
-    alignItems: 'center',
-  },
-  pinMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1A7A4A',
+    top: 60,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    zIndex: 1001,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 4,
-  },
-  pinMarkerCheapest: {
-    backgroundColor: '#7ED957',
-    borderColor: '#0F1F17',
-  },
-  pinMarkerSelected: {
-    transform: [{ scale: 1.2 }],
-    borderWidth: 4,
-  },
-  pinLabel: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 6,
-    maxWidth: 120,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  pinLabelText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 11,
-    color: '#0F1F17',
-    textAlign: 'center',
+    elevation: 5,
   },
   mapControls: {
     position: 'absolute',
-    top: 60,
+    top: 120,
     left: 20,
     right: 20,
     flexDirection: 'row',
@@ -432,7 +379,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginRight: 12,
   },
   filterChip: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -453,14 +399,6 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: '#0F1F17',
-  },
-  expandButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   drawer: {
     backgroundColor: '#FFFFFF',
@@ -559,7 +497,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     position: 'absolute',
-    top: 60,
+    top: 120,
     left: 20,
     right: 20,
     backgroundColor: '#FFEBEE',
@@ -659,23 +597,5 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
     color: '#1A7A4A',
-  },
-  emptyMapState: {
-    position: 'absolute',
-    top: '40%',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyMapEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyMapText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 16,
-    color: '#7ED957',
-    textAlign: 'center',
   },
 });
