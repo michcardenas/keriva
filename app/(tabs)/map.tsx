@@ -1,41 +1,84 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { MapPin, Navigation, Filter, Maximize2 } from 'lucide-react-native';
-import { useState } from 'react';
-
-const PHARMACY_PINS = [
-  {
-    id: 1,
-    name: 'Farmacia Carol',
-    price: 145,
-    distance: '1.2 km',
-    left: '30%',
-    top: '40%',
-    isCheapest: true,
-  },
-  {
-    id: 2,
-    name: 'Farmacia La Estrella',
-    price: 210,
-    distance: '2.5 km',
-    left: '60%',
-    top: '30%',
-    isCheapest: false,
-  },
-  {
-    id: 3,
-    name: 'Farmacia El Pueblo',
-    price: 189,
-    distance: '3.1 km',
-    left: '45%',
-    top: '60%',
-    isCheapest: false,
-  },
-];
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
 
+type Pharmacy = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  min_price: number;
+  isCheapest: boolean;
+  left: string;
+  top: string;
+};
+
 export default function MapScreen() {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPharmacies();
+  }, []);
+
+  async function loadPharmacies() {
+    try {
+      const { data, error } = await supabase
+        .from('pharmacies')
+        .select(`
+          id,
+          name,
+          address,
+          latitude,
+          longitude,
+          prices(price)
+        `);
+
+      if (error) throw error;
+
+      const positions = [
+        { left: '30%', top: '40%' },
+        { left: '60%', top: '30%' },
+        { left: '45%', top: '60%' },
+        { left: '25%', top: '55%' },
+        { left: '70%', top: '50%' },
+      ];
+
+      const pharmaciesWithPrices = data.map((pharm: any, index: number) => {
+        const minPrice = pharm.prices?.length > 0
+          ? Math.min(...pharm.prices.map((p: any) => parseFloat(p.price)))
+          : 0;
+        return {
+          id: pharm.id,
+          name: pharm.name,
+          address: pharm.address,
+          latitude: parseFloat(pharm.latitude),
+          longitude: parseFloat(pharm.longitude),
+          min_price: minPrice,
+          isCheapest: false,
+          ...positions[index % positions.length],
+        };
+      });
+
+      if (pharmaciesWithPrices.length > 0) {
+        const minPrice = Math.min(...pharmaciesWithPrices.map(p => p.min_price));
+        pharmaciesWithPrices.forEach(p => {
+          p.isCheapest = p.min_price === minPrice;
+        });
+      }
+
+      setPharmacies(pharmaciesWithPrices);
+    } catch (error) {
+      console.error('Error loading pharmacies:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const toggleFilter = (filter: string) => {
     if (selectedFilters.includes(filter)) {
@@ -44,6 +87,14 @@ export default function MapScreen() {
       setSelectedFilters([...selectedFilters, filter]);
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#7ED957" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -55,7 +106,7 @@ export default function MapScreen() {
             ))}
           </View>
 
-          {PHARMACY_PINS.map((pin) => (
+          {pharmacies.map((pin) => (
             <TouchableOpacity
               key={pin.id}
               style={[styles.pin, { left: pin.left, top: pin.top }]}
@@ -113,11 +164,11 @@ export default function MapScreen() {
       <View style={styles.drawer}>
         <View style={styles.drawerHandle} />
         <Text style={styles.drawerTitle}>
-          {PHARMACY_PINS.length} farmacias encontradas
+          {pharmacies.length} farmacias encontradas
         </Text>
 
         <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
-          {PHARMACY_PINS.map((pharmacy) => (
+          {pharmacies.map((pharmacy) => (
             <TouchableOpacity key={pharmacy.id} style={styles.resultCard}>
               <View style={styles.resultLeft}>
                 <View
@@ -133,10 +184,7 @@ export default function MapScreen() {
                 </View>
                 <View style={styles.resultInfo}>
                   <Text style={styles.resultName}>{pharmacy.name}</Text>
-                  <View style={styles.resultMeta}>
-                    <Navigation size={12} color="#666666" />
-                    <Text style={styles.resultDistance}>{pharmacy.distance}</Text>
-                  </View>
+                  <Text style={styles.resultAddress}>{pharmacy.address}</Text>
                 </View>
               </View>
               <View style={styles.resultRight}>
@@ -145,7 +193,7 @@ export default function MapScreen() {
                     <Text style={styles.resultBestBadgeText}>MEJOR PRECIO</Text>
                   </View>
                 )}
-                <Text style={styles.resultPrice}>RD${pharmacy.price}</Text>
+                <Text style={styles.resultPrice}>RD${pharmacy.min_price.toFixed(2)}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -317,12 +365,7 @@ const styles = StyleSheet.create({
     color: '#0F1F17',
     marginBottom: 4,
   },
-  resultMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  resultDistance: {
+  resultAddress: {
     fontFamily: 'DMSans-Regular',
     fontSize: 13,
     color: '#666666',
@@ -346,5 +389,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
     color: '#1A7A4A',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
