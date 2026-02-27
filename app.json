@@ -1,23 +1,31 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
-    "slug": "bolt-expo-nativewind",
+    "name": "Keriva - Encuentra tu Farmacia",
+    "slug": "keriva-farmacias",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "keriva",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "description": "Encuentra farmacias de turno cerca de ti. Reporta y descubre farmacias abiertas 24/7.",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.keriva.farmacias"
     },
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Keriva - Encuentra tu Farmacia",
+      "shortName": "Keriva",
+      "description": "Encuentra farmacias de turno cerca de ti. Reporta y descubre farmacias abiertas 24/7.",
+      "themeColor": "#10B981",
+      "backgroundColor": "#111827"
     },
     "plugins": ["expo-router", "expo-font", "expo-web-browser"],
     "android": {
+      "package": "app.keriva.farmacias",
       "config": {
         "googleMaps": {
           "apiKey": ""
