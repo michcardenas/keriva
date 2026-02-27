@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Award, Trophy, TrendingUp, Gift, Settings } from 'lucide-react-native';
+import { Award, Trophy, TrendingUp, Gift, Settings, ArrowLeft } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 const ACHIEVEMENTS = [
@@ -17,6 +18,7 @@ const RECENT_ACTIVITY = [
 ];
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const [points, setPoints] = useState(150);
   const [reportsCount, setReportsCount] = useState(3);
 
@@ -40,6 +42,13 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.push('/(tabs)')}
+      >
+        <ArrowLeft size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
       <LinearGradient
         colors={['#1A7A4A', '#0F1F17']}
         style={styles.header}
@@ -158,6 +167,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   header: {
     paddingTop: 60,

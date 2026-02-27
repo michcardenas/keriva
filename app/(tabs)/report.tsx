@@ -8,8 +8,9 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Camera, Award } from 'lucide-react-native';
+import { Camera, Award, ArrowLeft } from 'lucide-react-native';
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 const STEPS = [
@@ -19,6 +20,7 @@ const STEPS = [
 ];
 
 export default function ReportScreen() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [photoTaken, setPhotoTaken] = useState(false);
   const [medication, setMedication] = useState('Metformina 500mg');
@@ -82,6 +84,13 @@ export default function ReportScreen() {
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.push('/(tabs)')}
+      >
+        <ArrowLeft size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
       <LinearGradient
         colors={['#1A7A4A', '#0F1F17']}
         style={styles.header}
@@ -249,6 +258,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   header: {
     paddingTop: 60,

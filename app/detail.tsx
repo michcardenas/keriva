@@ -81,7 +81,7 @@ export default function DetailScreen() {
         <Text style={styles.emptyStateTitle}>Medicamento no encontrado</Text>
         <TouchableOpacity
           style={styles.backButtonEmpty}
-          onPress={() => router.back()}
+          onPress={() => router.push('/(tabs)')}
         >
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
@@ -106,7 +106,7 @@ export default function DetailScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
           <ArrowLeft size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>

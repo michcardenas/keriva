@@ -1,9 +1,17 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { MapPin, Navigation, Filter, Maximize2 } from 'lucide-react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated } from 'react-native';
+import { MapPin, Phone, Clock, ArrowLeft, AlertCircle } from 'lucide-react-native';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
+
+const SANTIAGO_BOUNDS = {
+  minLat: 19.430,
+  maxLat: 19.480,
+  minLng: -70.720,
+  maxLng: -70.670,
+};
 
 type Pharmacy = {
   id: string;
@@ -11,23 +19,47 @@ type Pharmacy = {
   address: string;
   latitude: number;
   longitude: number;
+  phone: string;
+  hours: string;
+  active: boolean;
   min_price: number;
   isCheapest: boolean;
-  left: string;
-  top: string;
 };
 
 export default function MapScreen() {
+  const router = useRouter();
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
+  const [selectedPharmacy, setSelectedPharmacy] = useState<Pharmacy | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
     loadPharmacies();
   }, []);
 
+  useEffect(() => {
+    if (selectedPharmacy) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 8,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: 300,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [selectedPharmacy]);
+
   async function loadPharmacies() {
+    console.log('Loading pharmacies from database...');
     try {
+      setError(null);
       const { data, error } = await supabase
         .from('pharmacies')
         .select(`
@@ -36,20 +68,21 @@ export default function MapScreen() {
           address,
           latitude,
           longitude,
+          phone,
+          hours,
+          active,
           prices(price)
-        `);
+        `)
+        .eq('active', true);
 
-      if (error) throw error;
+      console.log('Pharmacies query response:', { data, error });
 
-      const positions = [
-        { left: '30%', top: '40%' },
-        { left: '60%', top: '30%' },
-        { left: '45%', top: '60%' },
-        { left: '25%', top: '55%' },
-        { left: '70%', top: '50%' },
-      ];
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
 
-      const pharmaciesWithPrices = data.map((pharm: any, index: number) => {
+      const pharmaciesWithPrices = (data || []).map((pharm: any) => {
         const minPrice = pharm.prices?.length > 0
           ? Math.min(...pharm.prices.map((p: any) => parseFloat(p.price)))
           : 0;
@@ -59,26 +92,40 @@ export default function MapScreen() {
           address: pharm.address,
           latitude: parseFloat(pharm.latitude),
           longitude: parseFloat(pharm.longitude),
+          phone: pharm.phone || 'No disponible',
+          hours: pharm.hours || 'Consultar horario',
+          active: pharm.active,
           min_price: minPrice,
           isCheapest: false,
-          ...positions[index % positions.length],
         };
       });
 
       if (pharmaciesWithPrices.length > 0) {
-        const minPrice = Math.min(...pharmaciesWithPrices.map(p => p.min_price));
+        const minPrice = Math.min(...pharmaciesWithPrices.filter(p => p.min_price > 0).map(p => p.min_price));
         pharmaciesWithPrices.forEach(p => {
-          p.isCheapest = p.min_price === minPrice;
+          p.isCheapest = p.min_price === minPrice && p.min_price > 0;
         });
       }
 
+      console.log('Processed pharmacies:', pharmaciesWithPrices);
       setPharmacies(pharmaciesWithPrices);
     } catch (error) {
       console.error('Error loading pharmacies:', error);
+      setError('Error al cargar farmacias. Verifica la conexión.');
     } finally {
       setLoading(false);
     }
   }
+
+  const latLngToPosition = (lat: number, lng: number) => {
+    const x = ((lng - SANTIAGO_BOUNDS.minLng) / (SANTIAGO_BOUNDS.maxLng - SANTIAGO_BOUNDS.minLng)) * 100;
+    const y = ((SANTIAGO_BOUNDS.maxLat - lat) / (SANTIAGO_BOUNDS.maxLat - SANTIAGO_BOUNDS.minLat)) * 100;
+
+    return {
+      left: `${Math.max(5, Math.min(95, x))}%`,
+      top: `${Math.max(5, Math.min(95, y))}%`,
+    };
+  };
 
   const toggleFilter = (filter: string) => {
     if (selectedFilters.includes(filter)) {
@@ -88,16 +135,40 @@ export default function MapScreen() {
     }
   };
 
+  const handlePinPress = (pharmacy: Pharmacy) => {
+    console.log('Pharmacy selected:', pharmacy.name);
+    setSelectedPharmacy(pharmacy);
+  };
+
+  const closePharmacyCard = () => {
+    setSelectedPharmacy(null);
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
         <ActivityIndicator size="large" color="#7ED957" />
+        <Text style={styles.loadingText}>Cargando farmacias...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.push('/(tabs)')}
+      >
+        <ArrowLeft size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <AlertCircle size={20} color="#D32F2F" />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
       <View style={styles.mapContainer}>
         <View style={styles.mapPlaceholder}>
           <View style={styles.mapGrid}>
@@ -112,30 +183,35 @@ export default function MapScreen() {
               <Text style={styles.emptyMapText}>No hay farmacias disponibles</Text>
             </View>
           ) : (
-            pharmacies.map((pin) => (
-              <TouchableOpacity
-                key={pin.id}
-                style={[styles.pin, { left: pin.left, top: pin.top }]}
-              >
-                <View
-                  style={[
-                    styles.pinMarker,
-                    pin.isCheapest && styles.pinMarkerCheapest,
-                  ]}
+            pharmacies.map((pharmacy) => {
+              const position = latLngToPosition(pharmacy.latitude, pharmacy.longitude);
+              return (
+                <TouchableOpacity
+                  key={pharmacy.id}
+                  style={[styles.pin, { left: position.left, top: position.top }]}
+                  onPress={() => handlePinPress(pharmacy)}
                 >
-                  <MapPin
-                    size={20}
-                    color={pin.isCheapest ? '#0F1F17' : '#FFFFFF'}
-                    fill={pin.isCheapest ? '#7ED957' : '#1A7A4A'}
-                  />
-                </View>
-                {pin.isCheapest && (
-                  <View style={styles.cheapestBadge}>
-                    <Text style={styles.cheapestBadgeText}>MÁS BARATO</Text>
+                  <View
+                    style={[
+                      styles.pinMarker,
+                      pharmacy.isCheapest && styles.pinMarkerCheapest,
+                      selectedPharmacy?.id === pharmacy.id && styles.pinMarkerSelected,
+                    ]}
+                  >
+                    <MapPin
+                      size={20}
+                      color={pharmacy.isCheapest ? '#0F1F17' : '#FFFFFF'}
+                      fill={pharmacy.isCheapest ? '#7ED957' : '#1A7A4A'}
+                    />
                   </View>
-                )}
-              </TouchableOpacity>
-            ))
+                  <View style={styles.pinLabel}>
+                    <Text style={styles.pinLabelText} numberOfLines={1}>
+                      {pharmacy.name}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
 
@@ -161,10 +237,6 @@ export default function MapScreen() {
               </TouchableOpacity>
             ))}
           </View>
-
-          <TouchableOpacity style={styles.expandButton}>
-            <Maximize2 size={20} color="#0F1F17" />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -176,7 +248,11 @@ export default function MapScreen() {
 
         <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
           {pharmacies.map((pharmacy) => (
-            <TouchableOpacity key={pharmacy.id} style={styles.resultCard}>
+            <TouchableOpacity
+              key={pharmacy.id}
+              style={styles.resultCard}
+              onPress={() => handlePinPress(pharmacy)}
+            >
               <View style={styles.resultLeft}>
                 <View
                   style={[
@@ -200,12 +276,59 @@ export default function MapScreen() {
                     <Text style={styles.resultBestBadgeText}>MEJOR PRECIO</Text>
                   </View>
                 )}
-                <Text style={styles.resultPrice}>RD${pharmacy.min_price.toFixed(2)}</Text>
+                {pharmacy.min_price > 0 && (
+                  <Text style={styles.resultPrice}>RD${pharmacy.min_price.toFixed(2)}</Text>
+                )}
               </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
+
+      {selectedPharmacy && (
+        <Animated.View
+          style={[
+            styles.pharmacyDetailCard,
+            { transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <View style={styles.pharmacyDetailHeader}>
+            <View style={styles.pharmacyDetailTitleRow}>
+              <MapPin size={24} color="#1A7A4A" />
+              <Text style={styles.pharmacyDetailTitle}>{selectedPharmacy.name}</Text>
+            </View>
+            <TouchableOpacity onPress={closePharmacyCard} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.pharmacyDetailInfo}>
+            <View style={styles.pharmacyDetailRow}>
+              <MapPin size={18} color="#666" />
+              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.address}</Text>
+            </View>
+
+            <View style={styles.pharmacyDetailRow}>
+              <Clock size={18} color="#666" />
+              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.hours}</Text>
+            </View>
+
+            <View style={styles.pharmacyDetailRow}>
+              <Phone size={18} color="#666" />
+              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.phone}</Text>
+            </View>
+
+            {selectedPharmacy.min_price > 0 && (
+              <View style={styles.pharmacyPriceRow}>
+                <Text style={styles.pharmacyPriceLabel}>Precio más bajo:</Text>
+                <Text style={styles.pharmacyPriceValue}>
+                  RD${selectedPharmacy.min_price.toFixed(2)}
+                </Text>
+              </View>
+            )}
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -214,6 +337,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F1F17',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(26, 122, 74, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   mapContainer: {
     flex: 1,
@@ -255,18 +395,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#7ED957',
     borderColor: '#0F1F17',
   },
-  cheapestBadge: {
-    backgroundColor: '#0F1F17',
+  pinMarkerSelected: {
+    transform: [{ scale: 1.2 }],
+    borderWidth: 4,
+  },
+  pinLabel: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
-    marginTop: 4,
+    borderRadius: 6,
+    marginTop: 6,
+    maxWidth: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  cheapestBadgeText: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 9,
-    color: '#7ED957',
-    letterSpacing: 0.5,
+  pinLabelText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 11,
+    color: '#0F1F17',
+    textAlign: 'center',
   },
   mapControls: {
     position: 'absolute',
@@ -400,6 +550,115 @@ const styles = StyleSheet.create({
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: '#7ED957',
+    marginTop: 12,
+  },
+  errorBanner: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FFEBEE',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  errorText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: '#D32F2F',
+    flex: 1,
+  },
+  pharmacyDetailCard: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  pharmacyDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  pharmacyDetailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  pharmacyDetailTitle: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 20,
+    color: '#0F1F17',
+    flex: 1,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 18,
+    color: '#666',
+  },
+  pharmacyDetailInfo: {
+    gap: 16,
+  },
+  pharmacyDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pharmacyDetailText: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 15,
+    color: '#333',
+    flex: 1,
+  },
+  pharmacyPriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  pharmacyPriceLabel: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: '#1A7A4A',
+  },
+  pharmacyPriceValue: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
+    color: '#1A7A4A',
   },
   emptyMapState: {
     position: 'absolute',
