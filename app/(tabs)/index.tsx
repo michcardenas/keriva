@@ -128,33 +128,31 @@ export default function SearchScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          </>
-        )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Categorías</Text>
-          <View style={styles.categoryGrid}>
-            {CATEGORIES.map((category) => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === category && styles.categoryChipActive,
-                ]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text
-                  style={[
-                    styles.categoryChipText,
-                    selectedCategory === category && styles.categoryChipTextActive,
-                  ]}
-                >
-                  {category}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Categorías</Text>
+              <View style={styles.categoryGrid}>
+                {CATEGORIES.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[
+                      styles.categoryChip,
+                      selectedCategory === category && styles.categoryChipActive,
+                    ]}
+                    onPress={() => setSelectedCategory(category)}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        selectedCategory === category && styles.categoryChipTextActive,
+                      ]}
+                    >
+                      {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Medicamentos populares</Text>
@@ -170,7 +168,8 @@ export default function SearchScreen() {
                 ))}
               </View>
             </View>
-        </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
