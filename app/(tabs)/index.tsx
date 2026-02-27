@@ -257,7 +257,7 @@ export default function SearchScreen() {
                       <TouchableOpacity
                         key={item.id}
                         style={styles.recentItem}
-                        onPress={() => router.push('/detail')}
+                        onPress={() => router.push(`/detail?id=${item.id}`)}
                       >
                         <View style={styles.recentItemLeft}>
                           <View style={styles.pillIcon}>
@@ -314,7 +314,7 @@ export default function SearchScreen() {
                       <TouchableOpacity
                         key={med.id}
                         style={styles.popularCard}
-                        onPress={() => router.push('/detail')}
+                        onPress={() => router.push(`/detail?id=${med.id}`)}
                       >
                         <Text style={styles.popularCardEmoji}>💊</Text>
                         <Text style={styles.popularCardName}>{med.name}</Text>

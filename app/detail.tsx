@@ -42,6 +42,16 @@ export default function DetailScreen() {
 
   async function loadMedicationDetail() {
     try {
+      const medicationId = params.id as string;
+
+      if (!medicationId) {
+        console.error('No medication ID provided');
+        setLoading(false);
+        return;
+      }
+
+      console.log('Loading medication detail for ID:', medicationId);
+
       const { data, error } = await supabase
         .from('medications')
         .select(`
@@ -55,8 +65,10 @@ export default function DetailScreen() {
             pharmacies(name, address)
           )
         `)
-        .limit(1)
-        .single();
+        .eq('id', medicationId)
+        .maybeSingle();
+
+      console.log('Medication query result:', { data, error });
 
       if (error) throw error;
       setMedication(data as any);
