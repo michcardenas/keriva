@@ -1,7 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, MapPin, Navigation } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -13,8 +15,88 @@ const AVAILABILITY_DAYS = [
   { day: 'D', available: false },
 ];
 
+type MedicationDetail = {
+  id: string;
+  name: string;
+  dosage: string;
+  category: string;
+  generic_name: string | null;
+  prices: Array<{
+    price: string;
+    pharmacy: {
+      name: string;
+      address: string;
+    };
+  }>;
+};
+
 export default function DetailScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const [medication, setMedication] = useState<MedicationDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMedicationDetail();
+  }, []);
+
+  async function loadMedicationDetail() {
+    try {
+      const { data, error } = await supabase
+        .from('medications')
+        .select(`
+          id,
+          name,
+          dosage,
+          category,
+          generic_name,
+          prices(
+            price,
+            pharmacies(name, address)
+          )
+        `)
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+      setMedication(data as any);
+    } catch (error) {
+      console.error('Error loading medication:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#1A7A4A" />
+      </View>
+    );
+  }
+
+  if (!medication) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.emptyStateTitle}>Medicamento no encontrado</Text>
+        <TouchableOpacity
+          style={styles.backButtonEmpty}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const prices = medication.prices.map((p: any) => parseFloat(p.price));
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+  const savings = avgPrice > minPrice ? avgPrice - minPrice : 0;
+
+  const cheapestPharmacy = medication.prices.find(
+    (p: any) => parseFloat(p.price) === minPrice
+  )?.pharmacies;
 
   return (
     <View style={styles.container}>
@@ -27,52 +109,51 @@ export default function DetailScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Metformina 500mg</Text>
-        <Text style={styles.headerSubtitle}>Para diabetes tipo 2</Text>
+        <Text style={styles.headerTitle}>
+          {medication.name} {medication.dosage}
+        </Text>
+        <Text style={styles.headerSubtitle}>{medication.category}</Text>
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.pharmacyCard}>
-          <View style={styles.pharmacyHeader}>
-            <View>
-              <Text style={styles.pharmacyName}>Farmacia Carol</Text>
-              <View style={styles.locationRow}>
-                <MapPin size={14} color="#666666" />
-                <Text style={styles.locationText}>Av. 27 de Febrero · 1.2 km</Text>
+        {cheapestPharmacy && (
+          <View style={styles.pharmacyCard}>
+            <View style={styles.pharmacyHeader}>
+              <View>
+                <Text style={styles.pharmacyName}>{cheapestPharmacy.name}</Text>
+                <View style={styles.locationRow}>
+                  <MapPin size={14} color="#666666" />
+                  <Text style={styles.locationText}>{cheapestPharmacy.address}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceLabel}>Mejor precio</Text>
+              <Text style={styles.price}>RD${minPrice.toFixed(2)}</Text>
+            </View>
+
+            {savings > 0 && (
+              <View style={styles.savingsBadge}>
+                <Text style={styles.savingsBadgeText}>
+                  💰 Ahorras RD${savings.toFixed(2)} vs promedio
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {medication.generic_name && medication.generic_name !== medication.name && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Opción genérica disponible</Text>
+            <View style={styles.genericCard}>
+              <View style={styles.genericLeft}>
+                <Text style={styles.genericBadge}>GENÉRICO</Text>
+                <Text style={styles.genericName}>{medication.generic_name}</Text>
               </View>
             </View>
           </View>
-
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceLabel}>Precio</Text>
-            <Text style={styles.price}>RD$145</Text>
-          </View>
-
-          <View style={styles.savingsBadge}>
-            <Text style={styles.savingsBadgeText}>💰 Ahorras RD$65 vs promedio</Text>
-          </View>
-
-          <View style={styles.insuranceBadge}>
-            <Text style={styles.insuranceBadgeIcon}>🏥</Text>
-            <View style={styles.insuranceBadgeContent}>
-              <Text style={styles.insuranceBadgeTitle}>
-                Tu seguro cubre este medicamento
-              </Text>
-              <Text style={styles.insuranceBadgeSubtitle}>Copago: RD$40</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Opción genérica disponible</Text>
-          <View style={styles.genericCard}>
-            <View style={styles.genericLeft}>
-              <Text style={styles.genericBadge}>GENÉRICO</Text>
-              <Text style={styles.genericName}>Metformina HCl 500mg</Text>
-            </View>
-            <Text style={styles.genericPrice}>RD$89</Text>
-          </View>
-        </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Disponibilidad</Text>
@@ -101,11 +182,32 @@ export default function DetailScreen() {
           </Text>
         </View>
 
+        {medication.prices.length > 1 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Otras farmacias</Text>
+            {medication.prices.slice(1).map((priceData: any, index: number) => (
+              <View key={index} style={styles.otherPharmacyCard}>
+                <View style={styles.otherPharmacyLeft}>
+                  <Text style={styles.otherPharmacyName}>
+                    {priceData.pharmacies.name}
+                  </Text>
+                  <Text style={styles.otherPharmacyAddress}>
+                    {priceData.pharmacies.address}
+                  </Text>
+                </View>
+                <Text style={styles.otherPharmacyPrice}>
+                  RD${parseFloat(priceData.price).toFixed(2)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sobre este medicamento</Text>
           <Text style={styles.description}>
-            La metformina es un medicamento antidiabético oral usado para tratar la diabetes
-            tipo 2. Ayuda a controlar los niveles de azúcar en la sangre.
+            {medication.category} - {medication.name}
+            {medication.generic_name && ` (${medication.generic_name})`}
           </Text>
         </View>
       </ScrollView>
@@ -338,5 +440,57 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateTitle: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 18,
+    color: '#0F1F17',
+    marginBottom: 16,
+  },
+  backButtonEmpty: {
+    backgroundColor: '#1A7A4A',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  backButtonText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  otherPharmacyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  otherPharmacyLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  otherPharmacyName: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 15,
+    color: '#0F1F17',
+    marginBottom: 4,
+  },
+  otherPharmacyAddress: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 13,
+    color: '#666666',
+  },
+  otherPharmacyPrice: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 18,
+    color: '#1A7A4A',
   },
 });

@@ -106,30 +106,37 @@ export default function MapScreen() {
             ))}
           </View>
 
-          {pharmacies.map((pin) => (
-            <TouchableOpacity
-              key={pin.id}
-              style={[styles.pin, { left: pin.left, top: pin.top }]}
-            >
-              <View
-                style={[
-                  styles.pinMarker,
-                  pin.isCheapest && styles.pinMarkerCheapest,
-                ]}
+          {pharmacies.length === 0 ? (
+            <View style={styles.emptyMapState}>
+              <Text style={styles.emptyMapEmoji}>🏥</Text>
+              <Text style={styles.emptyMapText}>No hay farmacias disponibles</Text>
+            </View>
+          ) : (
+            pharmacies.map((pin) => (
+              <TouchableOpacity
+                key={pin.id}
+                style={[styles.pin, { left: pin.left, top: pin.top }]}
               >
-                <MapPin
-                  size={20}
-                  color={pin.isCheapest ? '#0F1F17' : '#FFFFFF'}
-                  fill={pin.isCheapest ? '#7ED957' : '#1A7A4A'}
-                />
-              </View>
-              {pin.isCheapest && (
-                <View style={styles.cheapestBadge}>
-                  <Text style={styles.cheapestBadgeText}>MÁS BARATO</Text>
+                <View
+                  style={[
+                    styles.pinMarker,
+                    pin.isCheapest && styles.pinMarkerCheapest,
+                  ]}
+                >
+                  <MapPin
+                    size={20}
+                    color={pin.isCheapest ? '#0F1F17' : '#FFFFFF'}
+                    fill={pin.isCheapest ? '#7ED957' : '#1A7A4A'}
+                  />
                 </View>
-              )}
-            </TouchableOpacity>
-          ))}
+                {pin.isCheapest && (
+                  <View style={styles.cheapestBadge}>
+                    <Text style={styles.cheapestBadgeText}>MÁS BARATO</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         <View style={styles.mapControls}>
@@ -393,5 +400,23 @@ const styles = StyleSheet.create({
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyMapState: {
+    position: 'absolute',
+    top: '40%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyMapEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyMapText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 16,
+    color: '#7ED957',
+    textAlign: 'center',
   },
 });

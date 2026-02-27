@@ -1,11 +1,11 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, ScanBarcode, MapPin, Clock } from 'lucide-react-native';
+import { Search, ScanBarcode, MapPin, Clock, TrendingUp } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const CATEGORIES = ['Todo', 'Diabetes', 'Presión', 'Antibióticos'];
+const CATEGORIES = ['Todo', 'Antidiabético', 'Antihipertensivo', 'Estatina'];
 
 type Medication = {
   id: string;
@@ -20,12 +20,18 @@ export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todo');
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [filteredMeds, setFilteredMeds] = useState<Medication[]>([]);
   const [popularMeds, setPopularMeds] = useState<Medication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     loadMedications();
   }, []);
+
+  useEffect(() => {
+    searchMedications();
+  }, [searchQuery, selectedCategory]);
 
   async function loadMedications() {
     try {
@@ -38,12 +44,11 @@ export default function SearchScreen() {
           category,
           prices(price)
         `)
-        .order('created_at', { ascending: false })
-        .limit(6);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const medsWithPrices = data.map((med: any) => ({
+      const medsWithPrices = (data || []).map((med: any) => ({
         id: med.id,
         name: med.name,
         dosage: med.dosage,
@@ -53,12 +58,60 @@ export default function SearchScreen() {
           : 0,
       }));
 
-      setMedications(medsWithPrices.slice(0, 3));
-      setPopularMeds(medsWithPrices.slice(3, 7));
+      setMedications(medsWithPrices);
+      setPopularMeds(medsWithPrices.slice(0, 6));
     } catch (error) {
       console.error('Error loading medications:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function searchMedications() {
+    if (!searchQuery.trim() && selectedCategory === 'Todo') {
+      setFilteredMeds([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      let query = supabase
+        .from('medications')
+        .select(`
+          id,
+          name,
+          dosage,
+          category,
+          prices(price)
+        `);
+
+      if (searchQuery.trim()) {
+        query = query.or(`name.ilike.%${searchQuery}%,dosage.ilike.%${searchQuery}%`);
+      }
+
+      if (selectedCategory !== 'Todo') {
+        query = query.eq('category', selectedCategory);
+      }
+
+      const { data, error } = await query.limit(20);
+
+      if (error) throw error;
+
+      const medsWithPrices = (data || []).map((med: any) => ({
+        id: med.id,
+        name: med.name,
+        dosage: med.dosage,
+        category: med.category,
+        min_price: med.prices?.length > 0
+          ? Math.min(...med.prices.map((p: any) => parseFloat(p.price)))
+          : 0,
+      }));
+
+      setFilteredMeds(medsWithPrices);
+    } catch (error) {
+      console.error('Error searching medications:', error);
+      setFilteredMeds([]);
     }
   }
 
@@ -98,38 +151,6 @@ export default function SearchScreen() {
         ) : (
           <>
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Clock size={18} color="#1A7A4A" />
-                <Text style={styles.sectionTitle}>Búsquedas recientes</Text>
-              </View>
-
-              {medications.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.recentItem}
-                  onPress={() => router.push('/detail')}
-                >
-                  <View style={styles.recentItemLeft}>
-                    <View style={styles.pillIcon}>
-                      <Text style={styles.pillIconText}>💊</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.recentItemName}>
-                        {item.name} {item.dosage}
-                      </Text>
-                      <Text style={styles.recentItemPrice}>
-                        Desde RD${item.min_price.toFixed(2)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.arrow}>
-                    <Text style={styles.arrowText}>→</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Categorías</Text>
               <View style={styles.categoryGrid}>
                 {CATEGORIES.map((category) => (
@@ -154,20 +175,88 @@ export default function SearchScreen() {
               </View>
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Medicamentos populares</Text>
-              <View style={styles.popularGrid}>
-                {popularMeds.map((med) => (
-                  <TouchableOpacity key={med.id} style={styles.popularCard}>
-                    <Text style={styles.popularCardEmoji}>💊</Text>
-                    <Text style={styles.popularCardName}>{med.name}</Text>
-                    <Text style={styles.popularCardPrice}>
-                      Desde RD${med.min_price.toFixed(2)}
-                    </Text>
+            {searching && filteredMeds.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Search size={18} color="#1A7A4A" />
+                  <Text style={styles.sectionTitle}>Resultados de búsqueda</Text>
+                </View>
+
+                {filteredMeds.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.recentItem}
+                    onPress={() => router.push('/detail')}
+                  >
+                    <View style={styles.recentItemLeft}>
+                      <View style={styles.pillIcon}>
+                        <Text style={styles.pillIconText}>💊</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.recentItemName}>
+                          {item.name} {item.dosage}
+                        </Text>
+                        <Text style={styles.recentItemCategory}>
+                          {item.category}
+                        </Text>
+                        <Text style={styles.recentItemPrice}>
+                          Desde RD${item.min_price.toFixed(2)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.arrow}>
+                      <Text style={styles.arrowText}>→</Text>
+                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
+            )}
+
+            {searching && filteredMeds.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateEmoji}>🔍</Text>
+                <Text style={styles.emptyStateTitle}>No se encontraron medicamentos</Text>
+                <Text style={styles.emptyStateText}>
+                  Intenta con otro término de búsqueda o categoría
+                </Text>
+              </View>
+            )}
+
+            {!searching && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <TrendingUp size={18} color="#1A7A4A" />
+                  <Text style={styles.sectionTitle}>Medicamentos populares</Text>
+                </View>
+
+                {popularMeds.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateEmoji}>💊</Text>
+                    <Text style={styles.emptyStateTitle}>No hay medicamentos disponibles</Text>
+                    <Text style={styles.emptyStateText}>
+                      Los medicamentos aparecerán aquí pronto
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.popularGrid}>
+                    {popularMeds.map((med) => (
+                      <TouchableOpacity
+                        key={med.id}
+                        style={styles.popularCard}
+                        onPress={() => router.push('/detail')}
+                      >
+                        <Text style={styles.popularCardEmoji}>💊</Text>
+                        <Text style={styles.popularCardName}>{med.name}</Text>
+                        <Text style={styles.popularCardDosage}>{med.dosage}</Text>
+                        <Text style={styles.popularCardPrice}>
+                          Desde RD${med.min_price.toFixed(2)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -271,6 +360,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#0F1F17',
   },
+  recentItemCategory: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 2,
+  },
   recentItemPrice: {
     fontFamily: 'DMSans-Regular',
     fontSize: 13,
@@ -342,6 +437,13 @@ const styles = StyleSheet.create({
     color: '#0F1F17',
     textAlign: 'center',
   },
+  popularCardDosage: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: 2,
+  },
   popularCardPrice: {
     fontFamily: 'DMSans-Regular',
     fontSize: 12,
@@ -353,5 +455,27 @@ const styles = StyleSheet.create({
     padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 18,
+    color: '#0F1F17',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
   },
 });
