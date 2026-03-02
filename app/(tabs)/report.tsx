@@ -12,6 +12,7 @@ import { Camera, Award, ArrowLeft } from 'lucide-react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import LanguageSelector from '@/components/LanguageSelector';
 
 const STEPS = [
   { number: 1, title: 'Foto', description: 'Toma una foto del precio' },
@@ -97,8 +98,13 @@ export default function ReportScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       >
-        <Text style={styles.headerTitle}>Reportar Precio</Text>
-        <Text style={styles.headerSubtitle}>Ayuda a la comunidad y gana puntos</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Reportar Precio</Text>
+            <Text style={styles.headerSubtitle}>Ayuda a la comunidad y gana puntos</Text>
+          </View>
+          <LanguageSelector />
+        </View>
 
         <View style={styles.stepsContainer}>
           {STEPS.map((step, index) => (
@@ -280,6 +286,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 24,
     paddingHorizontal: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
   headerTitle: {
     fontFamily: 'Poppins-Bold',

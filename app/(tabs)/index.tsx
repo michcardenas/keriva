@@ -4,6 +4,7 @@ import { Search, ScanBarcode, MapPin, TrendingUp, AlertCircle } from 'lucide-rea
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import LanguageSelector from '@/components/LanguageSelector';
 
 const CATEGORIES = ['Todo', 'Antidiabético', 'Antihipertensivo', 'Estatina'];
 
@@ -180,9 +181,12 @@ export default function SearchScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       >
-        <View style={styles.locationContainer}>
-          <MapPin size={16} color="#7ED957" />
-          <Text style={styles.locationText}>Santiago, RD</Text>
+        <View style={styles.topBar}>
+          <View style={styles.locationContainer}>
+            <MapPin size={16} color="#7ED957" />
+            <Text style={styles.locationText}>Santiago, RD</Text>
+          </View>
+          <LanguageSelector />
         </View>
 
         <View style={styles.searchContainer}>
@@ -345,11 +349,16 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     paddingHorizontal: 20,
   },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 16,
   },
   locationText: {
     fontFamily: 'DMSans-Medium',

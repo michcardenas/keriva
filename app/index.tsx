@@ -3,11 +3,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Search } from 'lucide-react-native';
 import { useLanguage } from '@/lib/LanguageContext';
-import { LANGUAGES } from '@/lib/translations';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { language, setLanguage, t } = useLanguage();
+  const { t } = useLanguage();
 
   return (
     <LinearGradient
@@ -19,7 +18,7 @@ export default function SplashScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
           <View style={styles.logoIcon}>
-            <Search color="#7ED957" size={36} strokeWidth={3} />
+            <Search color="#7ED957" size={72} strokeWidth={3} />
             <View style={styles.pillIconContainer}>
               <View style={styles.pillHalf} />
               <View style={[styles.pillHalf, styles.pillHalfWhite]} />
@@ -29,32 +28,6 @@ export default function SplashScreen() {
           <Text style={styles.tagline}>
             {t.splash.tagline}
           </Text>
-        </View>
-
-        <View style={styles.languageContainer}>
-          <Text style={styles.languageLabel}>{t.splash.language}</Text>
-          <View style={styles.languageGrid}>
-            {LANGUAGES.map((lang) => (
-              <TouchableOpacity
-                key={lang.code}
-                style={[
-                  styles.languageButton,
-                  language === lang.code && styles.languageButtonActive,
-                ]}
-                onPress={() => setLanguage(lang.code as any)}
-              >
-                <Text style={styles.languageFlag}>{lang.flag}</Text>
-                <Text
-                  style={[
-                    styles.languageCode,
-                    language === lang.code && styles.languageCodeActive,
-                  ]}
-                >
-                  {lang.code}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         <View style={styles.featuresContainer}>
@@ -103,25 +76,25 @@ const styles = StyleSheet.create({
   },
   logoIcon: {
     position: 'relative',
-    width: 80,
-    height: 80,
+    width: 160,
+    height: 160,
     backgroundColor: 'rgba(126, 217, 87, 0.1)',
-    borderRadius: 40,
+    borderRadius: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
   },
   pillIconContainer: {
     position: 'absolute',
-    width: 16,
-    height: 8,
+    width: 32,
+    height: 16,
     flexDirection: 'row',
-    borderRadius: 4,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   pillHalf: {
-    width: 8,
-    height: 8,
+    width: 16,
+    height: 16,
     backgroundColor: '#7ED957',
   },
   pillHalfWhite: {
@@ -129,59 +102,18 @@ const styles = StyleSheet.create({
   },
   logoText: {
     fontFamily: 'Poppins-Black',
-    fontSize: 48,
+    fontSize: 72,
     color: '#FFFFFF',
-    letterSpacing: -1,
+    letterSpacing: -2,
   },
   tagline: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 16,
+    fontFamily: 'DMSans-Medium',
+    fontSize: 22,
     color: '#7ED957',
     textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 24,
+    marginTop: 12,
+    lineHeight: 32,
     paddingHorizontal: 20,
-  },
-  languageContainer: {
-    marginBottom: 32,
-  },
-  languageLabel: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#FFFFFF',
-    marginBottom: 12,
-    opacity: 0.7,
-  },
-  languageGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  languageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  languageButtonActive: {
-    backgroundColor: '#7ED957',
-    borderColor: '#7ED957',
-  },
-  languageFlag: {
-    fontSize: 18,
-  },
-  languageCode: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 12,
-    color: '#FFFFFF',
-  },
-  languageCodeActive: {
-    color: '#0F1F17',
   },
   featuresContainer: {
     gap: 12,

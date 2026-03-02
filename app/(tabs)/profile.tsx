@@ -4,6 +4,7 @@ import { Award, Trophy, TrendingUp, Gift, Settings, ArrowLeft } from 'lucide-rea
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import LanguageSelector from '@/components/LanguageSelector';
 
 const ACHIEVEMENTS = [
   { icon: '🎯', title: 'Primer reporte', description: 'Reportaste tu primer precio', unlocked: true },
@@ -59,9 +60,12 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>👤</Text>
           </View>
-          <TouchableOpacity style={styles.settingsButton}>
-            <Settings size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <LanguageSelector />
+            <TouchableOpacity style={styles.settingsButton}>
+              <Settings size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={styles.userName}>Usuario Keriva</Text>
@@ -206,6 +210,11 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 32,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   settingsButton: {
     width: 40,
