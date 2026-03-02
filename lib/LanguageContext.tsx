@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations } from './translations';
 
-type LanguageCode = 'ES' | 'EN' | 'FR' | 'DE' | 'IT' | 'PT' | 'RU' | 'ZH';
+type LanguageCode = 'EN' | 'ZH' | 'HI' | 'ES' | 'FR' | 'AR' | 'BN' | 'PT' | 'RU' | 'JA' | 'PA' | 'DE' | 'JV' | 'KO' | 'TE' | 'TR' | 'TA' | 'IT' | 'VI' | 'PL';
 
 interface LanguageContextType {
   language: LanguageCode;

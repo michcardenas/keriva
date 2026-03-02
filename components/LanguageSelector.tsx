@@ -5,7 +5,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { LANGUAGES } from '@/lib/translations';
 
 export default function LanguageSelector() {
-  const { language, setLanguage } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
   const [modalVisible, setModalVisible] = useState(false);
 
   const currentLanguage = LANGUAGES.find(lang => lang.code === language);
@@ -29,7 +29,7 @@ export default function LanguageSelector() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Seleccionar idioma</Text>
+              <Text style={styles.modalTitle}>{t.splash.language}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <X size={24} color="#0F1F17" />
               </TouchableOpacity>

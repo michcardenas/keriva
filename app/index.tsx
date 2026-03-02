@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Search } from 'lucide-react-native';
 import { useLanguage } from '@/lib/LanguageContext';
+import LanguageSelector from '@/components/LanguageSelector';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -15,6 +16,10 @@ export default function SplashScreen() {
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
     >
+      <View style={styles.topBar}>
+        <LanguageSelector />
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
           <View style={styles.logoIcon}>
@@ -63,6 +68,12 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    zIndex: 10,
   },
   scrollContent: {
     flexGrow: 1,
