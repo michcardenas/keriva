@@ -12,7 +12,7 @@ export const LANGUAGES = [
 export const translations = {
   ES: {
     splash: {
-      tagline: 'Encuentra el medicamento más barato cerca de ti',
+      tagline: 'busca.compara.ahorra.',
       language: 'Idioma',
       features: [
         'Compara precios en tiempo real',
@@ -113,7 +113,7 @@ export const translations = {
   },
   EN: {
     splash: {
-      tagline: 'Find the cheapest medication near you',
+      tagline: 'search.compare.save.',
       language: 'Language',
       features: [
         'Compare real-time prices',
@@ -214,7 +214,7 @@ export const translations = {
   },
   FR: {
     splash: {
-      tagline: 'Trouvez le médicament le moins cher près de chez vous',
+      tagline: 'cherchez.comparez.économisez.',
       language: 'Langue',
       features: [
         'Comparez les prix en temps réel',
@@ -315,7 +315,7 @@ export const translations = {
   },
   DE: {
     splash: {
-      tagline: 'Finden Sie das günstigste Medikament in Ihrer Nähe',
+      tagline: 'suchen.vergleichen.sparen.',
       language: 'Sprache',
       features: [
         'Vergleichen Sie Preise in Echtzeit',
@@ -416,7 +416,7 @@ export const translations = {
   },
   IT: {
     splash: {
-      tagline: 'Trova il farmaco più economico vicino a te',
+      tagline: 'cerca.confronta.risparmia.',
       language: 'Lingua',
       features: [
         'Confronta i prezzi in tempo reale',
@@ -517,7 +517,7 @@ export const translations = {
   },
   PT: {
     splash: {
-      tagline: 'Encontre o medicamento mais barato perto de você',
+      tagline: 'busque.compare.economize.',
       language: 'Idioma',
       features: [
         'Compare preços em tempo real',
@@ -618,7 +618,7 @@ export const translations = {
   },
   RU: {
     splash: {
-      tagline: 'Найдите самый дешёвый препарат рядом с вами',
+      tagline: 'ищите.сравнивайте.экономьте.',
       language: 'Язык',
       features: [
         'Сравнивайте цены в реальном времени',
@@ -719,7 +719,7 @@ export const translations = {
   },
   ZH: {
     splash: {
-      tagline: '在您附近找到最便宜的药品',
+      tagline: '搜索.比较.省钱.',
       language: '语言',
       features: [
         '实时比较价格',
