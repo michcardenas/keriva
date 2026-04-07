@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, ScanBarcode, MapPin, TrendingUp, AlertCircle } from 'lucide-react-native';
+import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -64,7 +64,7 @@ export default function SearchScreen() {
           name,
           dosage,
           category,
-          prices(price)
+          medication_prices(price)
         `)
         .order('created_at', { ascending: false })
         .limit(6);
@@ -81,8 +81,8 @@ export default function SearchScreen() {
         name: med.name,
         dosage: med.dosage,
         category: med.category,
-        min_price: med.prices?.length > 0
-          ? Math.min(...med.prices.map((p: any) => parseFloat(p.price)))
+        min_price: med.medication_prices?.length > 0
+          ? Math.min(...med.medication_prices.map((p: any) => parseFloat(p.price)))
           : 0,
       }));
 
@@ -109,7 +109,7 @@ export default function SearchScreen() {
           name,
           dosage,
           category,
-          prices(price)
+          medication_prices(price)
         `);
 
       if (searchQuery.trim()) {
@@ -134,8 +134,8 @@ export default function SearchScreen() {
         name: med.name,
         dosage: med.dosage,
         category: med.category,
-        min_price: med.prices?.length > 0
-          ? Math.min(...med.prices.map((p: any) => parseFloat(p.price)))
+        min_price: med.medication_prices?.length > 0
+          ? Math.min(...med.medication_prices.map((p: any) => parseFloat(p.price)))
           : 0,
       }));
 

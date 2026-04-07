@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated, Platform } from 'react-native';
-import { MapPin, Phone, Clock, ArrowLeft, AlertCircle, Locate } from 'lucide-react-native';
+import { MapPin, Phone, Clock, ArrowLeft, CircleAlert as AlertCircle, Locate } from 'lucide-react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -71,7 +71,7 @@ export default function MapScreen() {
           phone,
           hours,
           active,
-          prices(price)
+          medication_prices(price)
         `)
         .eq('active', true);
 
@@ -83,8 +83,8 @@ export default function MapScreen() {
       }
 
       const pharmaciesWithPrices = (data || []).map((pharm: any) => {
-        const minPrice = pharm.prices?.length > 0
-          ? Math.min(...pharm.prices.map((p: any) => parseFloat(p.price)))
+        const minPrice = pharm.medication_prices?.length > 0
+          ? Math.min(...pharm.medication_prices.map((p: any) => parseFloat(p.price)))
           : 0;
         return {
           id: pharm.id,
