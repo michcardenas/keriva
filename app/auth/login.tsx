@@ -57,10 +57,6 @@ export default function LoginScreen() {
           <View style={styles.branding}>
             <View style={styles.logoCircle}>
               <Search color="#7ED957" size={32} strokeWidth={3} />
-              <View style={styles.pillDot}>
-                <View style={styles.pillHalf} />
-                <View style={[styles.pillHalf, styles.pillHalfWhite]} />
-              </View>
             </View>
             <Text style={styles.logoText}>keriva</Text>
             <Text style={styles.tagline}>busca.compara.ahorra.</Text>
