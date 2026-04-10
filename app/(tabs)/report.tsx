@@ -28,10 +28,11 @@ import { useAuth } from '@/lib/AuthContext';
 import { createPriceReport } from '@/lib/api/precios';
 import { getAllMedicationOptions, type MedicationOption } from '@/lib/api/medicamentos';
 import { getAllPharmacyOptions, type PharmacyOption } from '@/lib/api/farmacias';
+import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 
 export default function ReportScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const [medications, setMedications] = useState<MedicationOption[]>([]);
   const [pharmacies, setPharmacies] = useState<PharmacyOption[]>([]);
@@ -49,12 +50,13 @@ export default function ReportScreen() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    if (!session) return;
     (async () => {
       const [m, p] = await Promise.all([getAllMedicationOptions(), getAllPharmacyOptions()]);
       setMedications(m);
       setPharmacies(p);
     })();
-  }, []);
+  }, [session]);
 
   const canSubmit = useMemo(() => {
     const n = parseFloat(price);
@@ -129,6 +131,16 @@ export default function ReportScreen() {
     setError(null);
     setSuccess(false);
   }, []);
+
+  if (!session) {
+    return (
+      <AuthRequiredPlaceholder
+        icon={<CameraIcon size={56} color="#7ED957" />}
+        title="Reporta precios y gana puntos"
+        description="Crea tu cuenta gratuita para reportar precios de medicamentos y ayudar a la comunidad dominicana a ahorrar."
+      />
+    );
+  }
 
   if (success) {
     return (

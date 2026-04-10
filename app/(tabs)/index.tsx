@@ -13,6 +13,7 @@ import {
   type SearchResult,
 } from '@/lib/api/search';
 import LanguageSelector from '@/components/LanguageSelector';
+import LoginNudge from '@/components/LoginNudge';
 
 const CATEGORIES = ['Todo', 'Antidiabético', 'Antihipertensivo', 'Estatina'];
 
@@ -338,6 +339,8 @@ export default function SearchScreen() {
           </>
         )}
       </ScrollView>
+
+      <LoginNudge delayMs={5000} />
     </View>
   );
 }

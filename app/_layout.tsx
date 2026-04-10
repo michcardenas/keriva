@@ -55,9 +55,16 @@ export default function RootLayout() {
 }
 
 /**
- * Navigator + route guard. Unauthenticated users cannot reach the tabs;
- * authenticated users cannot see the splash or auth screens.
+ * Navigator + route guard.
+ *
+ * Guest-friendly: Search, Map and Detail are public — anyone can browse
+ * medications and pharmacies without logging in.
+ *
+ * Protected: Report, Profile and Moderation require authentication.
+ * Authenticated users on auth/splash screens are sent to tabs.
  */
+const PROTECTED_TABS = new Set(['report', 'profile', 'moderation']);
+
 function RootNavigator() {
   const { session, loading } = useAuth();
   const segments = useSegments();
@@ -67,13 +74,19 @@ function RootNavigator() {
     if (loading) return;
 
     const first = segments[0] as string | undefined;
+    const second = segments[1] as string | undefined;
     const inAuthGroup = first === 'auth';
-    const inTabsGroup = first === '(tabs)' || first === 'detail';
     const onSplash = first === undefined;
 
-    if (!session && inTabsGroup) {
-      router.replace('/auth/login');
-    } else if (session && (inAuthGroup || onSplash)) {
+    if (!session) {
+      // Guest: only block protected tabs, allow everything else
+      const isProtectedTab =
+        first === '(tabs)' && typeof second === 'string' && PROTECTED_TABS.has(second);
+      if (isProtectedTab) {
+        router.replace('/auth/login');
+      }
+    } else if (inAuthGroup || onSplash) {
+      // Logged in user on auth/splash → send to tabs
       router.replace('/(tabs)');
     }
   }, [session, loading, segments, router]);

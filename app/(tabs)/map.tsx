@@ -3,6 +3,7 @@ import { MapPin, Phone, Clock, ArrowLeft, CircleAlert as AlertCircle } from 'luc
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { getActivePharmacies, type PharmacyView } from '@/lib/api/farmacias';
+import LoginNudge from '@/components/LoginNudge';
 
 const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
 
@@ -267,6 +268,8 @@ export default function MapScreen() {
           </View>
         </Animated.View>
       )}
+
+      <LoginNudge delayMs={4000} />
     </View>
   );
 }

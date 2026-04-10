@@ -59,6 +59,13 @@ export default function SplashScreen() {
           >
             <Text style={styles.secondaryButtonText}>{t.splash.signInButton}</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.exploreButton}
+            onPress={() => router.replace('/(tabs)')}
+          >
+            <Text style={styles.exploreButtonText}>Explorar sin cuenta</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </LinearGradient>
@@ -187,5 +194,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  exploreButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  exploreButtonText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.65)',
+    textDecorationLine: 'underline',
   },
 });

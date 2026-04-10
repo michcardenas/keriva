@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
 import { signOut } from '@/lib/api/auth';
 import { getMyReports, getMyStats, getMyPoints, type MyReport } from '@/lib/api/precios';
+import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import type { Rol } from '@/lib/api/perfiles';
 import LanguageSelector from '@/components/LanguageSelector';
 
@@ -46,7 +47,7 @@ function formatDate(iso: string): string {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, perfil, refreshPerfil } = useAuth();
+  const { user, perfil, session, refreshPerfil } = useAuth();
   const [reports, setReports] = useState<MyReport[]>([]);
   const [stats, setStats] = useState({ totalReports: 0, verifiedReports: 0, pendingReports: 0 });
   const [points, setPoints] = useState(0);
@@ -82,6 +83,16 @@ export default function ProfileScreen() {
 
   async function handleLogout() {
     await signOut();
+  }
+
+  if (!session) {
+    return (
+      <AuthRequiredPlaceholder
+        icon={<Award size={56} color="#7ED957" />}
+        title="Tu perfil de contribuidor"
+        description="Inicia sesión para ver tus reportes, puntos acumulados y logros. Cada reporte que hagas ayuda a la comunidad."
+      />
+    );
   }
 
   const displayName =
