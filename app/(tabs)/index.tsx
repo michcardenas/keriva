@@ -1,34 +1,52 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle } from 'lucide-react-native';
+import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Database, BookOpen } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import {
+  getPopularMedications,
+  searchMedications as apiSearchMedications,
+  type MedicationCard,
+} from '@/lib/api/medicamentos';
+import {
+  searchMedications as advancedSearch,
+  type SearchResult,
+} from '@/lib/api/search';
 import LanguageSelector from '@/components/LanguageSelector';
 
 const CATEGORIES = ['Todo', 'Antidiabético', 'Antihipertensivo', 'Estatina'];
-
-type Medication = {
-  id: string;
-  name: string;
-  dosage: string;
-  category: string;
-  min_price: number;
-};
 
 export default function SearchScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todo');
-  const [filteredMeds, setFilteredMeds] = useState<Medication[]>([]);
-  const [popularMeds, setPopularMeds] = useState<Medication[]>([]);
+  const [filteredMeds, setFilteredMeds] = useState<MedicationCard[]>([]);
+  const [advancedResults, setAdvancedResults] = useState<SearchResult[]>([]);
+  const [popularMeds, setPopularMeds] = useState<MedicationCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [useAdvanced, setUseAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadPopularMedications();
+    let cancelled = false;
+    (async () => {
+      try {
+        setError(null);
+        const meds = await getPopularMedications(6);
+        if (!cancelled) setPopularMeds(meds);
+      } catch {
+        if (!cancelled) {
+          setError('Error al cargar medicamentos. Verifica la conexión.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -36,15 +54,19 @@ export default function SearchScreen() {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    if (!searchQuery.trim() && selectedCategory === 'Todo') {
+    const trimmed = searchQuery.trim();
+
+    if (!trimmed && selectedCategory === 'Todo') {
       setFilteredMeds([]);
+      setAdvancedResults([]);
       setSearching(false);
+      setUseAdvanced(false);
       return;
     }
 
     searchTimeoutRef.current = setTimeout(() => {
-      searchMedications();
-    }, 300);
+      runSearch(trimmed);
+    }, 350);
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -53,125 +75,39 @@ export default function SearchScreen() {
     };
   }, [searchQuery, selectedCategory]);
 
-  async function loadPopularMedications() {
-    console.log('Loading popular medications...');
-    try {
-      setError(null);
-      const { data, error } = await supabase
-        .from('medications')
-        .select(`
-          id,
-          name,
-          dosage,
-          category,
-          medication_prices(price)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(6);
-
-      console.log('Popular medications response:', { data, error });
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      const medsWithPrices = (data || []).map((med: any) => ({
-        id: med.id,
-        name: med.name,
-        dosage: med.dosage,
-        category: med.category,
-        min_price: med.medication_prices?.length > 0
-          ? Math.min(...med.medication_prices.map((p: any) => parseFloat(p.price)))
-          : 0,
-      }));
-
-      console.log('Processed medications:', medsWithPrices);
-      setPopularMeds(medsWithPrices);
-    } catch (error) {
-      console.error('Error loading medications:', error);
-      setError('Error al cargar medicamentos. Verifica la conexión.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function searchMedications() {
-    console.log('Searching medications with query:', searchQuery, 'category:', selectedCategory);
+  async function runSearch(trimmed: string) {
     setSearching(true);
     setError(null);
-
     try {
-      let query = supabase
-        .from('medications')
-        .select(`
-          id,
-          name,
-          dosage,
-          category,
-          medication_prices(price)
-        `);
-
-      if (searchQuery.trim()) {
-        query = query.or(`name.ilike.%${searchQuery}%,dosage.ilike.%${searchQuery}%`);
+      // Use advanced full-text search (25k DIGEMAPS + 83 curated) when
+      // there's a text query of 2+ chars. Fall back to simple category
+      // filtering for category-only searches.
+      if (trimmed.length >= 2) {
+        const results = await advancedSearch(trimmed, 30);
+        setAdvancedResults(results);
+        setFilteredMeds([]);
+        setUseAdvanced(true);
+      } else {
+        const meds = await apiSearchMedications({
+          query: trimmed,
+          category: selectedCategory,
+        });
+        setFilteredMeds(meds);
+        setAdvancedResults([]);
+        setUseAdvanced(false);
       }
-
-      if (selectedCategory !== 'Todo') {
-        query = query.eq('category', selectedCategory);
-      }
-
-      const { data, error } = await query.limit(20);
-
-      console.log('Search response:', { data, error });
-
-      if (error) {
-        console.error('Search error:', error);
-        throw error;
-      }
-
-      const medsWithPrices = (data || []).map((med: any) => ({
-        id: med.id,
-        name: med.name,
-        dosage: med.dosage,
-        category: med.category,
-        min_price: med.medication_prices?.length > 0
-          ? Math.min(...med.medication_prices.map((p: any) => parseFloat(p.price)))
-          : 0,
-      }));
-
-      console.log('Search results:', medsWithPrices.length, 'medications');
-      setFilteredMeds(medsWithPrices);
-    } catch (error) {
-      console.error('Error searching medications:', error);
+    } catch {
       setError('Error en la búsqueda. Intenta de nuevo.');
       setFilteredMeds([]);
+      setAdvancedResults([]);
     }
   }
 
   const handleSearchChange = (text: string) => {
-    console.log('Search input changed:', text);
     setSearchQuery(text);
   };
 
-  const testDatabaseConnection = async () => {
-    console.log('Testing database connection...');
-    try {
-      const { data, error, count } = await supabase
-        .from('medications')
-        .select('*', { count: 'exact' })
-        .limit(1);
-
-      console.log('Test query result:', { data, error, count });
-      if (error) {
-        setError(`DB Error: ${error.message}`);
-      } else {
-        setError(`Conexión OK! ${count} medicamentos en total`);
-      }
-    } catch (err) {
-      console.error('Connection test failed:', err);
-      setError(`Error de conexión: ${err}`);
-    }
-  };
+  const totalResults = useAdvanced ? advancedResults.length : filteredMeds.length;
 
   return (
     <View style={styles.container}>
@@ -248,16 +184,82 @@ export default function SearchScreen() {
 
             {searching && (
               <>
-                {filteredMeds.length > 0 ? (
+                {totalResults > 0 ? (
                   <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                       <Search size={18} color="#1A7A4A" />
                       <Text style={styles.sectionTitle}>
-                        {filteredMeds.length} resultado{filteredMeds.length !== 1 ? 's' : ''}
+                        {totalResults} resultado{totalResults !== 1 ? 's' : ''}
                       </Text>
+                      {useAdvanced && (
+                        <View style={styles.catalogBadge}>
+                          <Database size={12} color="#1A7A4A" />
+                          <Text style={styles.catalogBadgeText}>
+                            DIGEMAPS + Keriva
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
-                    {filteredMeds.map((item) => (
+                    {/* Advanced results (from RPC full-text search) */}
+                    {useAdvanced && advancedResults.map((item, idx) => (
+                      <TouchableOpacity
+                        key={`${item.source}-${item.id ?? idx}`}
+                        style={styles.recentItem}
+                        onPress={item.id ? () => router.push(`/detail?id=${item.id}`) : undefined}
+                        activeOpacity={item.id ? 0.7 : 1}
+                      >
+                        <View style={styles.recentItemLeft}>
+                          <View style={[
+                            styles.pillIcon,
+                            item.source === 'catalogo' && styles.pillIconCatalog,
+                          ]}>
+                            {item.source === 'curado' ? (
+                              <Text style={styles.pillIconText}>💊</Text>
+                            ) : (
+                              <BookOpen size={18} color="#1A7A4A" />
+                            )}
+                          </View>
+                          <View style={styles.recentItemInfo}>
+                            <Text style={styles.recentItemName}>
+                              {item.commercialName}
+                              {item.dosage ? ` ${item.dosage}` : ''}
+                            </Text>
+                            {item.activeIngredient && (
+                              <Text style={styles.recentItemIngredient} numberOfLines={1}>
+                                {item.activeIngredient}
+                              </Text>
+                            )}
+                            <View style={styles.resultMetaRow}>
+                              {item.category ? (
+                                <Text style={styles.recentItemCategory}>{item.category}</Text>
+                              ) : null}
+                              {item.manufacturer ? (
+                                <Text style={styles.recentItemCategory} numberOfLines={1}>
+                                  {item.manufacturer}
+                                </Text>
+                              ) : null}
+                            </View>
+                            {item.referencePrice != null && item.referencePrice > 0 ? (
+                              <Text style={styles.recentItemPrice}>
+                                Ref. RD${item.referencePrice.toFixed(2)}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                        <View style={styles.sourceTag}>
+                          <Text style={[
+                            styles.sourceTagText,
+                            item.source === 'curado' ? styles.sourceTagCurado : styles.sourceTagCatalog,
+                          ]}>
+                            {item.source === 'curado' ? 'Keriva' : 'DIGEMAPS'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+
+                    {/* Simple filtered results (category-only search) */}
+                    {!useAdvanced && filteredMeds.map((item) => (
                       <TouchableOpacity
                         key={item.id}
                         style={styles.recentItem}
@@ -275,7 +277,7 @@ export default function SearchScreen() {
                               {item.category}
                             </Text>
                             <Text style={styles.recentItemPrice}>
-                              {item.min_price > 0 ? `Desde RD$${item.min_price.toFixed(2)}` : 'Precio no disponible'}
+                              {item.minPrice > 0 ? `Desde RD$${item.minPrice.toFixed(2)}` : 'Precio no disponible'}
                             </Text>
                           </View>
                         </View>
@@ -290,7 +292,8 @@ export default function SearchScreen() {
                     <Text style={styles.emptyStateEmoji}>🔍</Text>
                     <Text style={styles.emptyStateTitle}>No se encontraron medicamentos</Text>
                     <Text style={styles.emptyStateText}>
-                      Intenta con otro término de búsqueda o categoría
+                      Intenta con otro término de búsqueda o categoría.{'\n'}
+                      Se busca en 25,785 registros del catálogo DIGEMAPS.
                     </Text>
                   </View>
                 )}
@@ -324,7 +327,7 @@ export default function SearchScreen() {
                         <Text style={styles.popularCardName}>{med.name}</Text>
                         <Text style={styles.popularCardDosage}>{med.dosage}</Text>
                         <Text style={styles.popularCardPrice}>
-                          {med.min_price > 0 ? `Desde RD$${med.min_price.toFixed(2)}` : 'Consultar precio'}
+                          {med.minPrice > 0 ? `Desde RD$${med.minPrice.toFixed(2)}` : 'Consultar precio'}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -581,5 +584,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
+  },
+  pillIconCatalog: {
+    backgroundColor: '#E3F2FD',
+  },
+  recentItemIngredient: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 11,
+    color: '#1A7A4A',
+    marginTop: 1,
+  },
+  resultMetaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  sourceTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F0F0F0',
+    alignSelf: 'flex-start',
+  },
+  sourceTagText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 9,
+  },
+  sourceTagCurado: {
+    color: '#1A7A4A',
+  },
+  sourceTagCatalog: {
+    color: '#0D47A1',
+  },
+  catalogBadge: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  catalogBadgeText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 9,
+    color: '#1A7A4A',
   },
 });

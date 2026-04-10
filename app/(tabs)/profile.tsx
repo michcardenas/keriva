@@ -1,52 +1,101 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Award, Trophy, TrendingUp, Gift, Settings, ArrowLeft } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import {
+  Award,
+  Trophy,
+  TrendingUp,
+  Gift,
+  LogOut,
+  ArrowLeft,
+  ShieldCheck,
+  Clock,
+  Camera as CameraIcon,
+  Store,
+  UserCog,
+} from 'lucide-react-native';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
+import { signOut } from '@/lib/api/auth';
+import { getMyReports, getMyStats, getMyPoints, type MyReport } from '@/lib/api/precios';
+import type { Rol } from '@/lib/api/perfiles';
 import LanguageSelector from '@/components/LanguageSelector';
 
-const ACHIEVEMENTS = [
-  { icon: '🎯', title: 'Primer reporte', description: 'Reportaste tu primer precio', unlocked: true },
-  { icon: '🌟', title: '10 reportes', description: 'Alcanza 10 reportes', unlocked: false },
-  { icon: '🏆', title: 'Contribuidor top', description: 'Sé uno de los mejores', unlocked: false },
-];
+const ROL_LABELS: Record<Rol, string> = {
+  usuario: 'Usuario',
+  farmacia: 'Farmacia',
+  admin: 'Administrador',
+};
 
-const RECENT_ACTIVITY = [
-  { action: 'Reporte de precio', medication: 'Metformina 500mg', points: 50, date: 'Hace 2 horas' },
-  { action: 'Reporte de precio', medication: 'Losartán 50mg', points: 50, date: 'Ayer' },
-  { action: 'Reporte de precio', medication: 'Amoxicilina 500mg', points: 50, date: 'Hace 3 días' },
-];
+const ROL_COLORS: Record<Rol, { bg: string; text: string }> = {
+  usuario: { bg: '#E8F5E9', text: '#1A7A4A' },
+  farmacia: { bg: '#FFF3E0', text: '#E65100' },
+  admin: { bg: '#E3F2FD', text: '#0D47A1' },
+};
+
+function RolIcon({ rol }: { rol: Rol }) {
+  if (rol === 'admin') return <UserCog size={14} color={ROL_COLORS.admin.text} />;
+  if (rol === 'farmacia') return <Store size={14} color={ROL_COLORS.farmacia.text} />;
+  return <Award size={14} color={ROL_COLORS.usuario.text} />;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [points, setPoints] = useState(150);
-  const [reportsCount, setReportsCount] = useState(3);
+  const { user, perfil, refreshPerfil } = useAuth();
+  const [reports, setReports] = useState<MyReport[]>([]);
+  const [stats, setStats] = useState({ totalReports: 0, verifiedReports: 0, pendingReports: 0 });
+  const [points, setPoints] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    try {
+      const [r, s, p] = await Promise.all([
+        getMyReports(user.id, 20),
+        getMyStats(user.id),
+        getMyPoints(user.id),
+      ]);
+      setReports(r);
+      setStats(s);
+      setPoints(p);
+    } catch {
+      // RLS or network error; leave state as default.
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
-    loadUserPoints();
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    // Keep perfil fresh in case admin promoted this user in another tab.
+    refreshPerfil();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadUserPoints = async () => {
-    const { data, error } = await supabase
-      .from('user_points')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  async function handleLogout() {
+    await signOut();
+  }
 
-    if (data) {
-      setPoints(data.points);
-      setReportsCount(data.reports_count);
-    }
-  };
+  const displayName =
+    perfil?.nombre ??
+    (user?.user_metadata?.nombre as string | undefined) ??
+    user?.email?.split('@')[0] ??
+    'Usuario Keriva';
+  const displayEmail = perfil?.email ?? user?.email ?? '';
+  const rol: Rol = perfil?.rol ?? 'usuario';
+  const rolColors = ROL_COLORS[rol];
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.push('/(tabs)')}
-      >
+      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
         <ArrowLeft size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
@@ -62,14 +111,21 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.headerActions}>
             <LanguageSelector />
-            <TouchableOpacity style={styles.settingsButton}>
-              <Settings size={20} color="#FFFFFF" />
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <LogOut size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        <Text style={styles.userName}>Usuario Keriva</Text>
-        <Text style={styles.userEmail}>usuario@keriva.com</Text>
+        <Text style={styles.userName}>{displayName}</Text>
+        <Text style={styles.userEmail}>{displayEmail}</Text>
+
+        <View style={[styles.rolBadge, { backgroundColor: rolColors.bg }]}>
+          <RolIcon rol={rol} />
+          <Text style={[styles.rolBadgeText, { color: rolColors.text }]}>
+            {ROL_LABELS[rol]}
+          </Text>
+        </View>
 
         <View style={styles.pointsCard}>
           <View style={styles.pointsLeft}>
@@ -77,7 +133,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.pointsRight}>
             <Text style={styles.pointsLabel}>Puntos totales</Text>
-            <Text style={styles.pointsValue}>{points.toLocaleString()}</Text>
+            <Text style={styles.pointsValue}>{points.toLocaleString('es-DO')}</Text>
           </View>
         </View>
       </LinearGradient>
@@ -86,92 +142,124 @@ export default function ProfileScreen() {
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Trophy size={24} color="#1A7A4A" />
-            <Text style={styles.statValue}>{reportsCount}</Text>
+            <Text style={styles.statValue}>{stats.totalReports}</Text>
             <Text style={styles.statLabel}>Reportes</Text>
           </View>
           <View style={styles.statCard}>
-            <TrendingUp size={24} color="#1A7A4A" />
-            <Text style={styles.statValue}>#{reportsCount <= 10 ? '100+' : '50+'}</Text>
-            <Text style={styles.statLabel}>Ranking</Text>
+            <ShieldCheck size={24} color="#1A7A4A" />
+            <Text style={styles.statValue}>{stats.verifiedReports}</Text>
+            <Text style={styles.statLabel}>Verificados</Text>
           </View>
           <View style={styles.statCard}>
-            <Gift size={24} color="#1A7A4A" />
-            <Text style={styles.statValue}>0</Text>
-            <Text style={styles.statLabel}>Recompensas</Text>
+            <Clock size={24} color="#1A7A4A" />
+            <Text style={styles.statValue}>{stats.pendingReports}</Text>
+            <Text style={styles.statLabel}>Pendientes</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Logros</Text>
-          <View style={styles.achievementsList}>
-            {ACHIEVEMENTS.map((achievement, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.achievementCard,
-                  !achievement.unlocked && styles.achievementCardLocked,
-                ]}
+          <Text style={styles.sectionTitle}>Historial de contribuciones</Text>
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color="#1A7A4A" />
+            </View>
+          ) : reports.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyEmoji}>📋</Text>
+              <Text style={styles.emptyTitle}>Aún no has reportado precios</Text>
+              <Text style={styles.emptyText}>
+                Reporta el precio de un medicamento en una farmacia y empieza a ganar puntos.
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyCta}
+                onPress={() => router.push('/(tabs)/report')}
               >
-                <Text style={styles.achievementIcon}>{achievement.icon}</Text>
-                <View style={styles.achievementInfo}>
-                  <Text
+                <Text style={styles.emptyCtaText}>Hacer mi primer reporte</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            reports.map((r) => (
+              <View key={r.id} style={styles.reportCard}>
+                <View style={styles.reportLeft}>
+                  <View style={styles.reportIconBox}>
+                    <Text style={styles.reportIcon}>💊</Text>
+                  </View>
+                  <View style={styles.reportInfo}>
+                    <Text style={styles.reportName}>
+                      {r.medicationName} {r.medicationDosage}
+                    </Text>
+                    <Text style={styles.reportPharmacy}>
+                      {r.pharmacyName} · {r.pharmacyCity}
+                    </Text>
+                    <View style={styles.reportMeta}>
+                      <Text style={styles.reportDate}>{formatDate(r.createdAt)}</Text>
+                      {r.hasPhoto && (
+                        <View style={styles.reportPhotoBadge}>
+                          <CameraIcon size={10} color="#666" />
+                          <Text style={styles.reportPhotoText}>foto</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.reportRight}>
+                  <Text style={styles.reportPrice}>RD${r.price.toFixed(2)}</Text>
+                  <View
                     style={[
-                      styles.achievementTitle,
-                      !achievement.unlocked && styles.achievementTitleLocked,
+                      styles.statusBadge,
+                      r.status === 'verificado'
+                        ? styles.statusVerified
+                        : styles.statusPending,
                     ]}
                   >
-                    {achievement.title}
-                  </Text>
-                  <Text style={styles.achievementDescription}>
-                    {achievement.description}
-                  </Text>
-                </View>
-                {achievement.unlocked && (
-                  <View style={styles.achievementBadge}>
-                    <Text style={styles.achievementBadgeText}>✓</Text>
+                    {r.status === 'verificado' ? (
+                      <ShieldCheck size={12} color="#1A7A4A" />
+                    ) : (
+                      <Clock size={12} color="#E65100" />
+                    )}
+                    <Text
+                      style={[
+                        styles.statusText,
+                        r.status === 'verificado'
+                          ? styles.statusTextVerified
+                          : styles.statusTextPending,
+                      ]}
+                    >
+                      {r.status === 'verificado' ? 'Verificado' : 'Pendiente'}
+                    </Text>
                   </View>
-                )}
+                </View>
               </View>
-            ))}
+            ))
+          )}
+        </View>
+
+        {rol === 'admin' && (
+          <View style={styles.roleBanner}>
+            <UserCog size={20} color="#0D47A1" />
+            <Text style={styles.roleBannerText}>
+              Tienes permisos de administrador. Puedes moderar precios y gestionar farmacias.
+            </Text>
           </View>
-        </View>
+        )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actividad reciente</Text>
-          {RECENT_ACTIVITY.map((activity, index) => (
-            <View key={index} style={styles.activityCard}>
-              <View style={styles.activityLeft}>
-                <View style={styles.activityIcon}>
-                  <Text style={styles.activityIconText}>📊</Text>
-                </View>
-                <View>
-                  <Text style={styles.activityAction}>{activity.action}</Text>
-                  <Text style={styles.activityMedication}>{activity.medication}</Text>
-                  <Text style={styles.activityDate}>{activity.date}</Text>
-                </View>
-              </View>
-              <View style={styles.activityPoints}>
-                <Text style={styles.activityPointsValue}>+{activity.points}</Text>
-                <Text style={styles.activityPointsLabel}>pts</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+        {rol === 'farmacia' && (
+          <View style={styles.roleBannerOrange}>
+            <Store size={20} color="#E65100" />
+            <Text style={styles.roleBannerTextOrange}>
+              Gestionas los precios de tu farmacia. Puedes verificar reportes de tus clientes.
+            </Text>
+          </View>
+        )}
 
-        <TouchableOpacity style={styles.redeemButton}>
-          <Gift size={20} color="#FFFFFF" />
-          <Text style={styles.redeemButtonText}>Canjear puntos</Text>
-        </TouchableOpacity>
+        <View style={styles.footerSpace} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
   backButton: {
     position: 'absolute',
     top: 60,
@@ -179,48 +267,36 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1001,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    zIndex: 100,
   },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-  },
+  header: { paddingTop: 60, paddingBottom: 24, paddingHorizontal: 20 },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingLeft: 60,
   },
   avatar: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(126,217,87,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#7ED957',
   },
-  avatarText: {
-    fontSize: 32,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  settingsButton: {
+  avatarText: { fontSize: 28 },
+  headerActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  logoutButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -228,54 +304,62 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
     color: '#FFFFFF',
-    marginBottom: 4,
   },
   userEmail: {
     fontFamily: 'DMSans-Regular',
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 20,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
   },
-  pointsCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 20,
+  rolBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  rolBadgeText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 12,
+  },
+  pointsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(126,217,87,0.15)',
+    borderRadius: 16,
+    padding: 16,
     gap: 16,
+    marginTop: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(126,217,87,0.3)',
   },
   pointsLeft: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(126, 217, 87, 0.2)',
+    backgroundColor: 'rgba(126,217,87,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  pointsRight: {
-    flex: 1,
-  },
+  pointsRight: { flex: 1 },
   pointsLabel: {
-    fontFamily: 'DMSans-Regular',
+    fontFamily: 'DMSans-Medium',
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 4,
+    color: 'rgba(255,255,255,0.7)',
   },
   pointsValue: {
     fontFamily: 'Poppins-Bold',
-    fontSize: 32,
+    fontSize: 28,
     color: '#FFFFFF',
   },
-  content: {
-    flex: 1,
-  },
+  content: { flex: 1 },
   statsGrid: {
     flexDirection: 'row',
+    padding: 20,
     gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 20,
   },
   statCard: {
     flex: 1,
@@ -283,106 +367,73 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
   statValue: {
     fontFamily: 'Poppins-Bold',
-    fontSize: 24,
+    fontSize: 22,
     color: '#0F1F17',
-    marginTop: 8,
   },
   statLabel: {
     fontFamily: 'DMSans-Regular',
-    fontSize: 12,
+    fontSize: 11,
     color: '#666666',
-    marginTop: 4,
   },
-  section: {
-    padding: 20,
-  },
+  section: { paddingHorizontal: 20, marginBottom: 16 },
   sectionTitle: {
     fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
+    fontSize: 16,
     color: '#0F1F17',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  achievementsList: {
-    gap: 12,
-  },
-  achievementCard: {
+  loadingBox: { padding: 40, alignItems: 'center' },
+  emptyBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
+    padding: 24,
     alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 8,
   },
-  achievementCardLocked: {
-    opacity: 0.5,
-  },
-  achievementIcon: {
-    fontSize: 32,
-  },
-  achievementInfo: {
-    flex: 1,
-  },
-  achievementTitle: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 15,
+  emptyEmoji: { fontSize: 48 },
+  emptyTitle: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 16,
     color: '#0F1F17',
-    marginBottom: 2,
   },
-  achievementTitleLocked: {
-    color: '#999999',
-  },
-  achievementDescription: {
+  emptyText: {
     fontFamily: 'DMSans-Regular',
     fontSize: 13,
     color: '#666666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
   },
-  achievementBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#7ED957',
-    justifyContent: 'center',
-    alignItems: 'center',
+  emptyCta: {
+    backgroundColor: '#1A7A4A',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
   },
-  achievementBadgeText: {
-    color: '#0F1F17',
-    fontSize: 14,
+  emptyCtaText: {
     fontFamily: 'DMSans-Bold',
+    fontSize: 13,
+    color: '#FFFFFF',
   },
-  activityCard: {
+  reportCard: {
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
+    padding: 14,
+    marginBottom: 10,
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
-  activityLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  activityIcon: {
+  reportLeft: { flexDirection: 'row', gap: 12, flex: 1 },
+  reportIconBox: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -390,53 +441,103 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activityIconText: {
-    fontSize: 20,
-  },
-  activityAction: {
+  reportIcon: { fontSize: 20 },
+  reportInfo: { flex: 1 },
+  reportName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 14,
     color: '#0F1F17',
   },
-  activityMedication: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
-    marginTop: 2,
-  },
-  activityDate: {
+  reportPharmacy: {
     fontFamily: 'DMSans-Regular',
     fontSize: 12,
-    color: '#999999',
+    color: '#666666',
     marginTop: 2,
   },
-  activityPoints: {
-    alignItems: 'flex-end',
+  reportMeta: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    alignItems: 'center',
   },
-  activityPointsValue: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 18,
-    color: '#1A7A4A',
-  },
-  activityPointsLabel: {
+  reportDate: {
     fontFamily: 'DMSans-Regular',
     fontSize: 11,
-    color: '#666666',
+    color: '#999999',
   },
-  redeemButton: {
-    backgroundColor: '#1A7A4A',
-    borderRadius: 12,
-    paddingVertical: 16,
+  reportPhotoBadge: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    gap: 3,
     alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 20,
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
   },
-  redeemButtonText: {
+  reportPhotoText: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 10,
+    color: '#666',
+  },
+  reportRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    marginLeft: 12,
+  },
+  reportPrice: {
     fontFamily: 'Poppins-Bold',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontSize: 15,
+    color: '#1A7A4A',
   },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusVerified: { backgroundColor: '#E8F5E9' },
+  statusPending: { backgroundColor: '#FFF3E0' },
+  statusText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 10,
+  },
+  statusTextVerified: { color: '#1A7A4A' },
+  statusTextPending: { color: '#E65100' },
+  roleBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#E3F2FD',
+    padding: 14,
+    marginHorizontal: 20,
+    borderRadius: 12,
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  roleBannerText: {
+    flex: 1,
+    fontFamily: 'DMSans-Medium',
+    fontSize: 13,
+    color: '#0D47A1',
+    lineHeight: 18,
+  },
+  roleBannerOrange: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF3E0',
+    padding: 14,
+    marginHorizontal: 20,
+    borderRadius: 12,
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  roleBannerTextOrange: {
+    flex: 1,
+    fontFamily: 'DMSans-Medium',
+    fontSize: 13,
+    color: '#E65100',
+    lineHeight: 18,
+  },
+  footerSpace: { height: 40 },
 });

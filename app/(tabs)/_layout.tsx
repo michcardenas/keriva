@@ -1,9 +1,15 @@
 import { Tabs } from 'expo-router';
-import { Search, Map, Camera, User } from 'lucide-react-native';
+import { Search, Map, Camera, User, ShieldCheck } from 'lucide-react-native';
 import { useLanguage } from '@/lib/LanguageContext';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function TabLayout() {
   const { t } = useLanguage();
+  const { perfil } = useAuth();
+  const rol = perfil?.rol ?? 'usuario';
+  const showModeration = rol === 'admin' || rol === 'farmacia';
+
+  const moderationLabel = rol === 'admin' ? 'Moderar' : 'Mi farmacia';
 
   return (
     <Tabs
@@ -44,6 +50,16 @@ export default function TabLayout() {
         options={{
           title: t.tabs.report,
           tabBarIcon: ({ size, color }) => <Camera size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="moderation"
+        options={{
+          title: moderationLabel,
+          tabBarIcon: ({ size, color }) => <ShieldCheck size={size} color={color} />,
+          // Hide the tab entirely for regular users. The screen is still
+          // accessible by direct URL but it renders an info placeholder.
+          href: showModeration ? '/(tabs)/moderation' : null,
         }}
       />
       <Tabs.Screen

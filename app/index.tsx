@@ -49,13 +49,13 @@ export default function SplashScreen() {
         <View style={styles.ctaContainer}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => router.push('/(tabs)')}
+            onPress={() => router.push('/auth/register')}
           >
             <Text style={styles.primaryButtonText}>{t.splash.startButton}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => router.push('/(tabs)')}
+            onPress={() => router.push('/auth/login')}
           >
             <Text style={styles.secondaryButtonText}>{t.splash.signInButton}</Text>
           </TouchableOpacity>

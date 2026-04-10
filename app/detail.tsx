@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, MapPin, Navigation } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getMedicationDetail, type MedicationDetailView } from '@/lib/api/medicamentos';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -15,69 +15,33 @@ const AVAILABILITY_DAYS = [
   { day: 'D', available: false },
 ];
 
-type MedicationDetail = {
-  id: string;
-  name: string;
-  dosage: string;
-  category: string;
-  generic_name: string | null;
-  prices: Array<{
-    price: string;
-    pharmacy: {
-      name: string;
-      address: string;
-    };
-  }>;
-};
-
 export default function DetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const [medication, setMedication] = useState<MedicationDetail | null>(null);
+  const [medication, setMedication] = useState<MedicationDetailView | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadMedicationDetail();
-  }, []);
-
-  async function loadMedicationDetail() {
-    try {
-      const medicationId = params.id as string;
-
-      if (!medicationId) {
-        console.error('No medication ID provided');
-        setLoading(false);
-        return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const medicationId = params.id as string | undefined;
+        if (!medicationId) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        const data = await getMedicationDetail(medicationId);
+        if (!cancelled) setMedication(data);
+      } catch {
+        if (!cancelled) setMedication(null);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-
-      console.log('Loading medication detail for ID:', medicationId);
-
-      const { data, error } = await supabase
-        .from('medications')
-        .select(`
-          id,
-          name,
-          dosage,
-          category,
-          generic_name,
-          prices(
-            price,
-            pharmacies(name, address)
-          )
-        `)
-        .eq('id', medicationId)
-        .maybeSingle();
-
-      console.log('Medication query result:', { data, error });
-
-      if (error) throw error;
-      setMedication(data as any);
-    } catch (error) {
-      console.error('Error loading medication:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
 
   if (loading) {
     return (
@@ -101,14 +65,9 @@ export default function DetailScreen() {
     );
   }
 
-  const prices = medication.prices.map((p: any) => parseFloat(p.price));
-  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-  const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+  const { minPrice, avgPrice } = medication;
   const savings = avgPrice > minPrice ? avgPrice - minPrice : 0;
-
-  const cheapestPharmacy = medication.prices.find(
-    (p: any) => parseFloat(p.price) === minPrice
-  )?.pharmacies;
+  const cheapestPharmacy = medication.prices[0] ?? null;
 
   return (
     <View style={styles.container}>
@@ -132,10 +91,10 @@ export default function DetailScreen() {
           <View style={styles.pharmacyCard}>
             <View style={styles.pharmacyHeader}>
               <View>
-                <Text style={styles.pharmacyName}>{cheapestPharmacy.name}</Text>
+                <Text style={styles.pharmacyName}>{cheapestPharmacy.pharmacyName}</Text>
                 <View style={styles.locationRow}>
                   <MapPin size={14} color="#666666" />
-                  <Text style={styles.locationText}>{cheapestPharmacy.address}</Text>
+                  <Text style={styles.locationText}>{cheapestPharmacy.pharmacyAddress}</Text>
                 </View>
               </View>
             </View>
@@ -155,13 +114,13 @@ export default function DetailScreen() {
           </View>
         )}
 
-        {medication.generic_name && medication.generic_name !== medication.name && (
+        {medication.genericName && medication.genericName !== medication.name && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Opción genérica disponible</Text>
             <View style={styles.genericCard}>
               <View style={styles.genericLeft}>
                 <Text style={styles.genericBadge}>GENÉRICO</Text>
-                <Text style={styles.genericName}>{medication.generic_name}</Text>
+                <Text style={styles.genericName}>{medication.genericName}</Text>
               </View>
             </View>
           </View>
@@ -197,18 +156,18 @@ export default function DetailScreen() {
         {medication.prices.length > 1 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Otras farmacias</Text>
-            {medication.prices.slice(1).map((priceData: any, index: number) => (
+            {medication.prices.slice(1).map((priceData, index) => (
               <View key={index} style={styles.otherPharmacyCard}>
                 <View style={styles.otherPharmacyLeft}>
                   <Text style={styles.otherPharmacyName}>
-                    {priceData.pharmacies.name}
+                    {priceData.pharmacyName}
                   </Text>
                   <Text style={styles.otherPharmacyAddress}>
-                    {priceData.pharmacies.address}
+                    {priceData.pharmacyAddress}
                   </Text>
                 </View>
                 <Text style={styles.otherPharmacyPrice}>
-                  RD${parseFloat(priceData.price).toFixed(2)}
+                  RD${priceData.price.toFixed(2)}
                 </Text>
               </View>
             ))}
@@ -219,7 +178,7 @@ export default function DetailScreen() {
           <Text style={styles.sectionTitle}>Sobre este medicamento</Text>
           <Text style={styles.description}>
             {medication.category} - {medication.name}
-            {medication.generic_name && ` (${medication.generic_name})`}
+            {medication.genericName && ` (${medication.genericName})`}
           </Text>
         </View>
       </ScrollView>

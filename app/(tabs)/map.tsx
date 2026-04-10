@@ -1,30 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated, Platform } from 'react-native';
-import { MapPin, Phone, Clock, ArrowLeft, CircleAlert as AlertCircle, Locate } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated } from 'react-native';
+import { MapPin, Phone, Clock, ArrowLeft, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { getActivePharmacies, type PharmacyView } from '@/lib/api/farmacias';
 
 const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
 
-const SANTIAGO_CENTER = {
-  latitude: 19.4517,
-  longitude: -70.6970,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
-};
-
-type Pharmacy = {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  phone: string;
-  hours: string;
-  active: boolean;
-  min_price: number;
-  isCheapest: boolean;
-};
+type Pharmacy = PharmacyView;
 
 export default function MapScreen() {
   const router = useRouter();
@@ -57,60 +39,11 @@ export default function MapScreen() {
   }, [selectedPharmacy]);
 
   async function loadPharmacies() {
-    console.log('Loading pharmacies from database...');
     try {
       setError(null);
-      const { data, error } = await supabase
-        .from('pharmacies')
-        .select(`
-          id,
-          name,
-          address,
-          latitude,
-          longitude,
-          phone,
-          hours,
-          active,
-          medication_prices(price)
-        `)
-        .eq('active', true);
-
-      console.log('Pharmacies query response:', { data, error });
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      const pharmaciesWithPrices = (data || []).map((pharm: any) => {
-        const minPrice = pharm.medication_prices?.length > 0
-          ? Math.min(...pharm.medication_prices.map((p: any) => parseFloat(p.price)))
-          : 0;
-        return {
-          id: pharm.id,
-          name: pharm.name,
-          address: pharm.address,
-          latitude: parseFloat(pharm.latitude),
-          longitude: parseFloat(pharm.longitude),
-          phone: pharm.phone || 'No disponible',
-          hours: pharm.hours || 'Consultar horario',
-          active: pharm.active,
-          min_price: minPrice,
-          isCheapest: false,
-        };
-      });
-
-      if (pharmaciesWithPrices.length > 0) {
-        const minPrice = Math.min(...pharmaciesWithPrices.filter(p => p.min_price > 0).map(p => p.min_price));
-        pharmaciesWithPrices.forEach(p => {
-          p.isCheapest = p.min_price === minPrice && p.min_price > 0;
-        });
-      }
-
-      console.log('Processed pharmacies:', pharmaciesWithPrices);
-      setPharmacies(pharmaciesWithPrices);
-    } catch (error) {
-      console.error('Error loading pharmacies:', error);
+      const data = await getActivePharmacies();
+      setPharmacies(data);
+    } catch {
       setError('Error al cargar farmacias. Verifica la conexión.');
     } finally {
       setLoading(false);
@@ -126,7 +59,6 @@ export default function MapScreen() {
   };
 
   const handleMarkerPress = (pharmacy: Pharmacy) => {
-    console.log('Pharmacy selected:', pharmacy.name);
     setSelectedPharmacy(pharmacy);
   };
 
@@ -145,8 +77,8 @@ export default function MapScreen() {
     const y = ((SANTIAGO_BOUNDS.maxLat - lat) / (SANTIAGO_BOUNDS.maxLat - SANTIAGO_BOUNDS.minLat)) * 100;
 
     return {
-      left: `${Math.max(5, Math.min(95, x))}%`,
-      top: `${Math.max(5, Math.min(95, y))}%`,
+      left: `${Math.max(5, Math.min(95, x))}%` as `${number}%`,
+      top: `${Math.max(5, Math.min(95, y))}%` as `${number}%`,
     };
   };
 
@@ -282,8 +214,8 @@ export default function MapScreen() {
                     <Text style={styles.resultBestBadgeText}>MEJOR PRECIO</Text>
                   </View>
                 )}
-                {pharmacy.min_price > 0 && (
-                  <Text style={styles.resultPrice}>RD${pharmacy.min_price.toFixed(2)}</Text>
+                {pharmacy.minPrice > 0 && (
+                  <Text style={styles.resultPrice}>RD${pharmacy.minPrice.toFixed(2)}</Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -324,11 +256,11 @@ export default function MapScreen() {
               <Text style={styles.pharmacyDetailText}>{selectedPharmacy.phone}</Text>
             </View>
 
-            {selectedPharmacy.min_price > 0 && (
+            {selectedPharmacy.minPrice > 0 && (
               <View style={styles.pharmacyPriceRow}>
                 <Text style={styles.pharmacyPriceLabel}>Precio más bajo:</Text>
                 <Text style={styles.pharmacyPriceValue}>
-                  RD${selectedPharmacy.min_price.toFixed(2)}
+                  RD${selectedPharmacy.minPrice.toFixed(2)}
                 </Text>
               </View>
             )}
