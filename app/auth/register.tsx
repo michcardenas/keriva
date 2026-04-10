@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, User, Phone, IdCard } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Search } from 'lucide-react-native';
 import { signUpWithEmail } from '@/lib/api/auth';
 
 export default function RegisterScreen() {
@@ -73,10 +73,22 @@ export default function RegisterScreen() {
             <ArrowLeft color="#FFFFFF" size={24} />
           </TouchableOpacity>
 
+          {/* Logo + branding */}
+          <View style={styles.branding}>
+            <View style={styles.logoCircle}>
+              <Search color="#7ED957" size={28} strokeWidth={3} />
+              <View style={styles.pillDot}>
+                <View style={styles.pillHalf} />
+                <View style={[styles.pillHalf, styles.pillHalfWhite]} />
+              </View>
+            </View>
+            <Text style={styles.logoText}>keriva</Text>
+          </View>
+
           <View style={styles.header}>
-            <Text style={styles.title}>Crear cuenta</Text>
+            <Text style={styles.title}>Únete a Keriva</Text>
             <Text style={styles.subtitle}>
-              Únete a Keriva y empieza a ahorrar en tus medicamentos
+              Compara precios, reporta y gana puntos ayudando a tu comunidad
             </Text>
           </View>
 
@@ -184,7 +196,7 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 60 },
+  scroll: { flexGrow: 1, padding: 24, paddingTop: 50 },
   backButton: {
     width: 44,
     height: 44,
@@ -192,15 +204,57 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
   },
-  header: { marginBottom: 24 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 30, color: '#FFFFFF' },
+  branding: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  logoCircle: {
+    position: 'relative',
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(126, 217, 87, 0.1)',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  pillDot: {
+    position: 'absolute',
+    width: 12,
+    height: 6,
+    flexDirection: 'row',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  pillHalf: {
+    width: 6,
+    height: 6,
+    backgroundColor: '#7ED957',
+  },
+  pillHalfWhite: {
+    backgroundColor: '#FFFFFF',
+  },
+  logoText: {
+    fontFamily: 'Poppins-Black',
+    fontSize: 30,
+    color: '#FFFFFF',
+    letterSpacing: -1,
+  },
+  header: { marginBottom: 18, alignItems: 'center' },
+  title: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 24,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
   subtitle: {
     fontFamily: 'DMSans-Regular',
-    fontSize: 15,
+    fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
-    marginTop: 8,
+    marginTop: 6,
+    textAlign: 'center',
   },
   form: { gap: 12 },
   inputWrapper: {

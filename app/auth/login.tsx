@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, Search } from 'lucide-react-native';
 import { signInWithEmail } from '@/lib/api/auth';
 
 export default function LoginScreen() {
@@ -53,9 +53,24 @@ export default function LoginScreen() {
             <ArrowLeft color="#FFFFFF" size={24} />
           </TouchableOpacity>
 
+          {/* Logo + branding */}
+          <View style={styles.branding}>
+            <View style={styles.logoCircle}>
+              <Search color="#7ED957" size={32} strokeWidth={3} />
+              <View style={styles.pillDot}>
+                <View style={styles.pillHalf} />
+                <View style={[styles.pillHalf, styles.pillHalfWhite]} />
+              </View>
+            </View>
+            <Text style={styles.logoText}>keriva</Text>
+            <Text style={styles.tagline}>busca.compara.ahorra.</Text>
+          </View>
+
           <View style={styles.header}>
-            <Text style={styles.title}>Iniciar sesión</Text>
-            <Text style={styles.subtitle}>Encuentra las mejores ofertas en farmacias</Text>
+            <Text style={styles.title}>Bienvenido de vuelta</Text>
+            <Text style={styles.subtitle}>
+              Inicia sesión para reportar precios y ganar puntos
+            </Text>
           </View>
 
           <View style={styles.form}>
@@ -109,14 +124,26 @@ export default function LoginScreen() {
               <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
 
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>o</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
             <TouchableOpacity
-              style={styles.linkButton}
+              style={styles.registerButton}
               onPress={() => router.replace('/auth/register')}
               disabled={loading}
             >
-              <Text style={styles.linkText}>
-                ¿No tienes cuenta? <Text style={styles.linkTextBold}>Regístrate</Text>
-              </Text>
+              <Text style={styles.registerButtonText}>Crear cuenta gratis</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.exploreLink}
+              onPress={() => router.replace('/(tabs)')}
+              disabled={loading}
+            >
+              <Text style={styles.exploreLinkText}>Explorar sin cuenta</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -128,7 +155,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 60 },
+  scroll: { flexGrow: 1, padding: 24, paddingTop: 50 },
   backButton: {
     width: 44,
     height: 44,
@@ -136,17 +163,65 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 16,
   },
-  header: { marginBottom: 40 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 32, color: '#FFFFFF' },
+  branding: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoCircle: {
+    position: 'relative',
+    width: 72,
+    height: 72,
+    backgroundColor: 'rgba(126, 217, 87, 0.1)',
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pillDot: {
+    position: 'absolute',
+    width: 14,
+    height: 7,
+    flexDirection: 'row',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  pillHalf: {
+    width: 7,
+    height: 7,
+    backgroundColor: '#7ED957',
+  },
+  pillHalfWhite: {
+    backgroundColor: '#FFFFFF',
+  },
+  logoText: {
+    fontFamily: 'Poppins-Black',
+    fontSize: 36,
+    color: '#FFFFFF',
+    letterSpacing: -1,
+  },
+  tagline: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 13,
+    color: '#7ED957',
+    marginTop: -2,
+  },
+  header: { marginBottom: 24, alignItems: 'center' },
+  title: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 24,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
   subtitle: {
     fontFamily: 'DMSans-Regular',
-    fontSize: 15,
+    fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
-    marginTop: 8,
+    marginTop: 6,
+    textAlign: 'center',
   },
-  form: { gap: 16 },
+  form: { gap: 14 },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -175,7 +250,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonDisabled: { opacity: 0.7 },
   primaryButtonText: {
@@ -183,20 +258,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1A7A4A',
   },
-  forgotButton: { alignItems: 'center', paddingVertical: 8 },
+  forgotButton: { alignItems: 'center', paddingVertical: 6 },
   forgotText: {
     fontFamily: 'DMSans-Medium',
     fontSize: 13,
     color: '#7ED957',
   },
-  linkButton: { alignItems: 'center', paddingVertical: 12 },
-  linkText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 4,
   },
-  linkTextBold: {
-    fontFamily: 'DMSans-Bold',
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  dividerText: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  registerButton: {
+    borderWidth: 2,
+    borderColor: '#7ED957',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  registerButtonText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 15,
     color: '#7ED957',
+  },
+  exploreLink: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  exploreLinkText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    textDecorationLine: 'underline',
   },
 });
