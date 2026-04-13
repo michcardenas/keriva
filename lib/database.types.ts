@@ -51,6 +51,9 @@ export type SolicitudFarmaciaRow = {
   nombre_propietario: string;
   cedula_propietario: string;
   motivo_rechazo: string | null;
+  documento_url: string | null;
+  latitud: number;
+  longitud: number;
   revisado_por: string | null;
   created_at: string;
   updated_at: string;

@@ -16,6 +16,7 @@ export type SolicitudFarmacia = {
   nombrePropietario: string;
   cedulaPropietario: string;
   motivoRechazo: string | null;
+  documentoUrl: string | null;
   createdAt: string;
 };
 
@@ -33,6 +34,7 @@ function mapSolicitud(r: SolicitudFarmaciaRow): SolicitudFarmacia {
     nombrePropietario: r.nombre_propietario,
     cedulaPropietario: r.cedula_propietario,
     motivoRechazo: r.motivo_rechazo,
+    documentoUrl: (r as any).documento_url ?? null,
     createdAt: r.created_at,
   };
 }
@@ -49,11 +51,37 @@ export type CreateSolicitudInput = {
   horario: string;
   nombrePropietario: string;
   cedulaPropietario: string;
+  documentoUri?: string | null;
+  latitud?: number;
+  longitud?: number;
 };
+
+async function uploadDocumento(userId: string, uri: string): Promise<string | null> {
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const type = blob.type || 'application/pdf';
+    const ext = type.includes('pdf') ? 'pdf' : type.includes('png') ? 'png' : 'jpg';
+    const filename = `${userId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('solicitud-docs')
+      .upload(filename, blob, { contentType: type, upsert: false });
+    if (error) return null;
+    const { data } = supabase.storage.from('solicitud-docs').getPublicUrl(filename);
+    return data.publicUrl;
+  } catch {
+    return null;
+  }
+}
 
 export async function createSolicitud(
   input: CreateSolicitudInput,
 ): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  let documentoUrl: string | null = null;
+  if (input.documentoUri) {
+    documentoUrl = await uploadDocumento(input.usuarioId, input.documentoUri);
+  }
+
   const { data, error } = await supabase
     .from('solicitudes_farmacia')
     .insert({
@@ -66,6 +94,9 @@ export async function createSolicitud(
       horario: input.horario,
       nombre_propietario: input.nombrePropietario,
       cedula_propietario: input.cedulaPropietario,
+      documento_url: documentoUrl,
+      latitud: input.latitud ?? 0,
+      longitud: input.longitud ?? 0,
     })
     .select('id')
     .single();

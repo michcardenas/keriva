@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
+  Linking,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -18,6 +20,7 @@ import {
   Store,
   UserCog,
   Camera as CameraIcon,
+  Download,
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -231,6 +234,18 @@ export default function ModerationScreen() {
                     <Text style={styles.cardPharm}>Tel: {s.telefonoFarmacia} · {s.horario}</Text>
                     <Text style={styles.cardDate}>Propietario: {s.nombrePropietario} · Cédula: {s.cedulaPropietario}</Text>
                     <Text style={styles.cardDate}>{formatDate(s.createdAt)}</Text>
+                    {s.documentoUrl && (
+                      <TouchableOpacity
+                        style={styles.docLink}
+                        onPress={() => {
+                          if (Platform.OS === 'web') window.open(s.documentoUrl!, '_blank');
+                          else Linking.openURL(s.documentoUrl!);
+                        }}
+                      >
+                        <Download size={14} color="#7ED957" />
+                        <Text style={styles.docLinkText}>Ver documento adjunto</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
                 <View style={styles.actions}>
@@ -413,6 +428,12 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: '#FFFFFF' },
   tabText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.7)' },
   tabTextActive: { color: '#1A7A4A' },
+  docLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(126,217,87,0.1)', paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 8, alignSelf: 'flex-start', marginTop: 4,
+  },
+  docLinkText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#7ED957' },
   content: { flex: 1 },
   contentInner: { padding: 20, paddingBottom: 40 },
   loadingBox: { padding: 40, alignItems: 'center' },

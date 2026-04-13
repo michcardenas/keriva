@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,21 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Store, MapPin, Clock, Phone, User, FileText, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft, Store, MapPin, Clock, Phone, User, FileText, ChevronDown, Paperclip, X } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/lib/AuthContext';
 import { createSolicitud, getMySolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
+
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
+const SANTIAGO_CENTER: [number, number] = [-70.6970, 19.4517];
+
+function getMapboxGL(): any {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && (window as any).mapboxgl) {
+    return (window as any).mapboxgl;
+  }
+  return null;
+}
 
 const CIUDADES_RD = [
   'Santiago de los Caballeros',
@@ -75,6 +86,14 @@ export default function RegistroFarmaciaScreen() {
   const [nombrePropietario, setNombrePropietario] = useState('');
   const [cedulaPropietario, setCedulaPropietario] = useState('');
 
+  const [latitud, setLatitud] = useState<number | null>(null);
+  const [longitud, setLongitud] = useState<number | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+
+  const [documentoUri, setDocumentoUri] = useState<string | null>(null);
+  const [documentoName, setDocumentoName] = useState<string | null>(null);
   const [showCiudadPicker, setShowCiudadPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +111,56 @@ export default function RegistroFarmaciaScreen() {
     });
   }, [user]);
 
+  // Init mini-map for location picking
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !MAPBOX_TOKEN || mapInstanceRef.current) return;
+
+    const tryInit = () => {
+      const container = mapContainerRef.current;
+      if (!container || mapInstanceRef.current) return;
+
+      const mapboxgl = getMapboxGL();
+      if (!mapboxgl) return;
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+
+      const map = new mapboxgl.Map({
+        container,
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: SANTIAGO_CENTER,
+        zoom: 13,
+        attributionControl: false,
+      });
+
+      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+      map.on('click', (e: any) => {
+        const { lng, lat } = e.lngLat;
+        setLatitud(lat);
+        setLongitud(lng);
+
+        if (markerRef.current) markerRef.current.remove();
+
+        const el = document.createElement('div');
+        el.style.cssText = 'width:32px;height:32px;border-radius:50%;background:#7ED957;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);';
+
+        markerRef.current = new mapboxgl.Marker({ element: el })
+          .setLngLat([lng, lat])
+          .addTo(map);
+      });
+
+      mapInstanceRef.current = map;
+    };
+
+    const interval = setInterval(() => {
+      tryInit();
+      if (mapInstanceRef.current) clearInterval(interval);
+    }, 200);
+    const timeout = setTimeout(() => clearInterval(interval), 10000);
+
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [checkingExisting, existingSolicitud, success]);
+
   const validate = useCallback((): string | null => {
     if (!nombreComercial.trim()) return 'Ingresa el nombre de la farmacia';
     if (!DOC_REGEX.test(rnc)) return 'RNC inválido (formato: XXX-XXXXXXX-X)';
@@ -103,6 +172,18 @@ export default function RegistroFarmaciaScreen() {
     if (!DOC_REGEX.test(cedulaPropietario)) return 'Cédula inválida (formato: XXX-XXXXXXX-X)';
     return null;
   }, [nombreComercial, rnc, direccion, ciudad, telefono, horario, nombrePropietario, cedulaPropietario]);
+
+  async function pickDocument() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setDocumentoUri(result.assets[0].uri);
+      setDocumentoName(result.assets[0].fileName ?? 'documento.jpg');
+    }
+  }
 
   async function handleSubmit() {
     const validationError = validate();
@@ -121,6 +202,9 @@ export default function RegistroFarmaciaScreen() {
       horario: horario.trim(),
       nombrePropietario: nombrePropietario.trim(),
       cedulaPropietario,
+      documentoUri,
+      latitud: latitud ?? undefined,
+      longitud: longitud ?? undefined,
     });
     setSubmitting(false);
 
@@ -283,6 +367,26 @@ export default function RegistroFarmaciaScreen() {
             <ChevronDown size={18} color="rgba(255,255,255,0.5)" />
           </TouchableOpacity>
 
+          {/* Location picker map */}
+          {Platform.OS === 'web' && MAPBOX_TOKEN && (
+            <View style={styles.mapSection}>
+              <Text style={styles.mapLabel}>Ubicación en el mapa (toca para marcar)</Text>
+              <View style={styles.mapContainer}>
+                <div
+                  ref={mapContainerRef}
+                  style={{ width: '100%', height: '100%', borderRadius: 12 }}
+                />
+              </View>
+              {latitud && longitud ? (
+                <Text style={styles.mapCoords}>
+                  Ubicación seleccionada: {latitud.toFixed(5)}, {longitud.toFixed(5)}
+                </Text>
+              ) : (
+                <Text style={styles.mapHint}>Toca el mapa para marcar la ubicación de tu farmacia</Text>
+              )}
+            </View>
+          )}
+
           <View style={styles.inputWrapper}>
             <Phone size={18} color="rgba(255,255,255,0.5)" />
             <TextInput
@@ -335,6 +439,24 @@ export default function RegistroFarmaciaScreen() {
               editable={!submitting}
             />
           </View>
+
+          <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Documento de soporte (opcional)</Text>
+          <Text style={styles.docHint}>RNC, registro mercantil, licencia de operación, etc.</Text>
+
+          {documentoUri ? (
+            <View style={styles.docAttached}>
+              <Paperclip size={16} color="#7ED957" />
+              <Text style={styles.docAttachedName} numberOfLines={1}>{documentoName}</Text>
+              <TouchableOpacity onPress={() => { setDocumentoUri(null); setDocumentoName(null); }}>
+                <X size={18} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.docButton} onPress={pickDocument} disabled={submitting}>
+              <Paperclip size={18} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.docButtonText}>Adjuntar imagen o foto del documento</Text>
+            </TouchableOpacity>
+          )}
 
           {error && <Text style={styles.errorText}>{error}</Text>}
 
@@ -405,6 +527,25 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
   },
   input: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 15, color: '#FFFFFF' },
+  mapSection: { marginBottom: 10 },
+  mapLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#7ED957', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+  mapContainer: { height: 200, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  mapCoords: { fontFamily: 'DMSans-Medium', fontSize: 12, color: '#7ED957', marginTop: 6 },
+  mapHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6 },
+  docHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 },
+  docButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderStyle: 'dashed',
+    borderRadius: 12, paddingVertical: 14, paddingHorizontal: 14,
+  },
+  docButtonText: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.5)' },
+  docAttached: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(126,217,87,0.15)', borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderWidth: 1, borderColor: 'rgba(126,217,87,0.3)',
+  },
+  docAttachedName: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 13, color: '#7ED957' },
   errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FF6B6B', textAlign: 'center', marginVertical: 8 },
   primaryButton: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
   primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#1A7A4A' },
