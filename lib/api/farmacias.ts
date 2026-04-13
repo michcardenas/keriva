@@ -94,3 +94,51 @@ export async function getActivePharmacies(): Promise<PharmacyView[]> {
 
   return mapped;
 }
+
+// ── Admin functions ─────────────────────────────────────────
+
+export type FarmaciaAdmin = {
+  id: number;
+  nombre: string;
+  direccion: string;
+  ciudad: string;
+  telefono: string | null;
+  horario: string | null;
+  activa: boolean;
+  latitud: number;
+  longitud: number;
+  createdAt: string;
+};
+
+export async function getAllFarmaciasAdmin(): Promise<FarmaciaAdmin[]> {
+  const { data, error } = await supabase
+    .from('Farmacias')
+    .select('id, nombre, direccion, ciudad, telefono, horario, activa, latitud, longitud, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) return [];
+  return ((data ?? []) as Array<any>).map((f) => ({
+    id: f.id,
+    nombre: f.nombre,
+    direccion: f.direccion,
+    ciudad: f.ciudad,
+    telefono: f.telefono,
+    horario: f.horario,
+    activa: f.activa,
+    latitud: Number(f.latitud) || 0,
+    longitud: Number(f.longitud) || 0,
+    createdAt: f.created_at,
+  }));
+}
+
+export async function toggleFarmaciaActiva(
+  id: number,
+  activa: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('Farmacias')
+    .update({ activa })
+    .eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}

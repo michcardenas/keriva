@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Linking,
   Platform,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -21,6 +22,9 @@ import {
   UserCog,
   Camera as CameraIcon,
   Download,
+  Search,
+  MapPin,
+  Phone,
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -35,6 +39,11 @@ import {
   rechazarSolicitud,
   type SolicitudFarmacia,
 } from '@/lib/api/solicitudes';
+import {
+  getAllFarmaciasAdmin,
+  toggleFarmaciaActiva,
+  type FarmaciaAdmin,
+} from '@/lib/api/farmacias';
 import LanguageSelector from '@/components/LanguageSelector';
 
 function formatDate(iso: string): string {
@@ -54,10 +63,12 @@ export default function ModerationScreen() {
 
   const [reports, setReports] = useState<MyReport[]>([]);
   const [solicitudes, setSolicitudes] = useState<SolicitudFarmacia[]>([]);
+  const [farmacias, setFarmacias] = useState<FarmaciaAdmin[]>([]);
+  const [farmaciaFilter, setFarmaciaFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes'>('reportes');
+  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes' | 'gestion'>('reportes');
 
   const loadData = useCallback(async () => {
     if (rol === 'usuario') {
@@ -73,8 +84,12 @@ export default function ModerationScreen() {
     setReports(reportsData);
 
     if (rol === 'admin') {
-      const solData = await getPendingSolicitudes();
+      const [solData, farmData] = await Promise.all([
+        getPendingSolicitudes(),
+        getAllFarmaciasAdmin(),
+      ]);
       setSolicitudes(solData);
+      setFarmacias(farmData);
     }
     setLoading(false);
   }, [rol, perfil?.farmaciaId]);
@@ -113,6 +128,15 @@ export default function ModerationScreen() {
     setActioning(null);
     if (res.ok) {
       setSolicitudes((prev) => prev.filter((s) => s.id !== id));
+    }
+  }
+
+  async function handleToggleFarmacia(id: number, activa: boolean) {
+    setActioning(id);
+    const res = await toggleFarmaciaActiva(id, activa);
+    setActioning(null);
+    if (res.ok) {
+      setFarmacias((prev) => prev.map((f) => f.id === id ? { ...f, activa } : f));
     }
   }
 
@@ -195,7 +219,15 @@ export default function ModerationScreen() {
               onPress={() => setActiveTab('solicitudes')}
             >
               <Text style={[styles.tabText, activeTab === 'solicitudes' && styles.tabTextActive]}>
-                Farmacias ({solicitudes.length})
+                Solicitudes ({solicitudes.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'gestion' && styles.tabActive]}
+              onPress={() => setActiveTab('gestion')}
+            >
+              <Text style={[styles.tabText, activeTab === 'gestion' && styles.tabTextActive]}>
+                Gestión ({farmacias.length})
               </Text>
             </TouchableOpacity>
           </View>
@@ -211,6 +243,96 @@ export default function ModerationScreen() {
           <View style={styles.loadingBox}>
             <ActivityIndicator color="#1A7A4A" size="large" />
           </View>
+        ) : activeTab === 'gestion' && isAdmin ? (
+          <>
+            <View style={styles.filterRow}>
+              <Search size={16} color="#999" />
+              <TextInput
+                style={styles.filterInput}
+                placeholder="Filtrar por nombre o ciudad..."
+                placeholderTextColor="#999"
+                value={farmaciaFilter}
+                onChangeText={setFarmaciaFilter}
+              />
+              {farmaciaFilter ? (
+                <TouchableOpacity onPress={() => setFarmaciaFilter('')}>
+                  <X size={16} color="#999" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {(() => {
+              const filtered = farmacias.filter((f) => {
+                if (!farmaciaFilter.trim()) return true;
+                const q = farmaciaFilter.toLowerCase();
+                return f.nombre.toLowerCase().includes(q) || f.ciudad.toLowerCase().includes(q);
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <View style={styles.emptyBox}>
+                    <Text style={styles.emptyEmoji}>🏪</Text>
+                    <Text style={styles.emptyTitle}>No se encontraron farmacias</Text>
+                  </View>
+                );
+              }
+
+              return filtered.map((f) => (
+                <View key={f.id} style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.cardIconBox, { backgroundColor: f.activa ? '#E8F5E9' : '#FFEBEE' }]}>
+                      <Store size={20} color={f.activa ? '#1A7A4A' : '#D32F2F'} />
+                    </View>
+                    <View style={styles.cardHeaderText}>
+                      <Text style={styles.cardMedName}>{f.nombre}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <MapPin size={12} color="#666" />
+                        <Text style={styles.cardPharm}>{f.ciudad} · {f.direccion}</Text>
+                      </View>
+                      {f.telefono && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Phone size={12} color="#666" />
+                          <Text style={styles.cardPharm}>{f.telefono}</Text>
+                        </View>
+                      )}
+                      {f.horario && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Clock size={12} color="#666" />
+                          <Text style={styles.cardPharm}>{f.horario}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.cardDate}>
+                        Registrada: {formatDate(f.createdAt)}
+                      </Text>
+                      <Text style={styles.cardDate}>
+                        Coordenadas: {f.latitud.toFixed(4)}, {f.longitud.toFixed(4)}
+                      </Text>
+                    </View>
+                    <View style={[styles.farmBadge, f.activa ? styles.farmBadgeActive : styles.farmBadgeInactive]}>
+                      <Text style={[styles.farmBadgeText, f.activa ? styles.farmBadgeTextActive : styles.farmBadgeTextInactive]}>
+                        {f.activa ? 'Activa' : 'Inactiva'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, f.activa ? styles.rejectBtn : styles.verifyBtn]}
+                      onPress={() => handleToggleFarmacia(f.id, !f.activa)}
+                      disabled={actioning === f.id}
+                    >
+                      {actioning === f.id ? (
+                        <ActivityIndicator color={f.activa ? '#D32F2F' : '#FFFFFF'} size="small" />
+                      ) : (
+                        <Text style={f.activa ? styles.rejectText : styles.verifyText}>
+                          {f.activa ? 'Desactivar' : 'Activar'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ));
+            })()}
+          </>
         ) : activeTab === 'solicitudes' && isAdmin ? (
           solicitudes.length === 0 ? (
             <View style={styles.emptyBox}>
@@ -428,6 +550,18 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: '#FFFFFF' },
   tabText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.7)' },
   tabTextActive: { color: '#1A7A4A' },
+  filterRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 14, height: 44,
+    marginBottom: 16, borderWidth: 1, borderColor: '#E0E0E0',
+  },
+  filterInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#0F1F17' },
+  farmBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
+  farmBadgeActive: { backgroundColor: '#E8F5E9' },
+  farmBadgeInactive: { backgroundColor: '#FFEBEE' },
+  farmBadgeText: { fontFamily: 'DMSans-Bold', fontSize: 10 },
+  farmBadgeTextActive: { color: '#1A7A4A' },
+  farmBadgeTextInactive: { color: '#D32F2F' },
   docLink: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(126,217,87,0.1)', paddingHorizontal: 10, paddingVertical: 5,
