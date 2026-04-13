@@ -26,6 +26,12 @@ import {
   rejectReport,
   type MyReport,
 } from '@/lib/api/precios';
+import {
+  getPendingSolicitudes,
+  aprobarSolicitud,
+  rechazarSolicitud,
+  type SolicitudFarmacia,
+} from '@/lib/api/solicitudes';
 import LanguageSelector from '@/components/LanguageSelector';
 
 function formatDate(iso: string): string {
@@ -44,31 +50,39 @@ export default function ModerationScreen() {
   const rol = perfil?.rol ?? 'usuario';
 
   const [reports, setReports] = useState<MyReport[]>([]);
+  const [solicitudes, setSolicitudes] = useState<SolicitudFarmacia[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes'>('reportes');
 
-  const loadReports = useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (rol === 'usuario') {
       setReports([]);
+      setSolicitudes([]);
       setLoading(false);
       return;
     }
-    const data = await getPendingReports({
+    const reportsData = await getPendingReports({
       kind: rol,
       farmaciaId: perfil?.farmaciaId ?? undefined,
     });
-    setReports(data);
+    setReports(reportsData);
+
+    if (rol === 'admin') {
+      const solData = await getPendingSolicitudes();
+      setSolicitudes(solData);
+    }
     setLoading(false);
   }, [rol, perfil?.farmaciaId]);
 
   useEffect(() => {
-    loadReports();
-  }, [loadReports]);
+    loadData();
+  }, [loadData]);
 
   async function onRefresh() {
     setRefreshing(true);
-    await loadReports();
+    await loadData();
     setRefreshing(false);
   }
 
@@ -87,6 +101,24 @@ export default function ModerationScreen() {
     setActioning(null);
     if (res.ok) {
       setReports((prev) => prev.filter((r) => r.id !== id));
+    }
+  }
+
+  async function handleAprobarSolicitud(id: number) {
+    setActioning(id);
+    const res = await aprobarSolicitud(id);
+    setActioning(null);
+    if (res.ok) {
+      setSolicitudes((prev) => prev.filter((s) => s.id !== id));
+    }
+  }
+
+  async function handleRechazarSolicitud(id: number) {
+    setActioning(id);
+    const res = await rechazarSolicitud(id, 'Solicitud rechazada por el administrador');
+    setActioning(null);
+    if (res.ok) {
+      setSolicitudes((prev) => prev.filter((s) => s.id !== id));
     }
   }
 
@@ -132,13 +164,39 @@ export default function ModerationScreen() {
         </View>
         <Text style={styles.headerTitle}>{title}</Text>
         <Text style={styles.headerSubtitle}>{subtitle}</Text>
-        <View style={styles.statsBar}>
-          <View style={styles.statBox}>
-            <Clock size={16} color="#FFF3E0" />
-            <Text style={styles.statValue}>{reports.length}</Text>
-            <Text style={styles.statLabel}>Pendientes</Text>
+
+        {/* Farmacia: simple pending count */}
+        {!isAdmin && (
+          <View style={styles.statsBar}>
+            <View style={styles.statBox}>
+              <Clock size={16} color="#FFF3E0" />
+              <Text style={styles.statValue}>{reports.length}</Text>
+              <Text style={styles.statLabel}>Pendientes</Text>
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* Admin tabs */}
+        {isAdmin && (
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'reportes' && styles.tabActive]}
+              onPress={() => setActiveTab('reportes')}
+            >
+              <Text style={[styles.tabText, activeTab === 'reportes' && styles.tabTextActive]}>
+                Reportes ({reports.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'solicitudes' && styles.tabActive]}
+              onPress={() => setActiveTab('solicitudes')}
+            >
+              <Text style={[styles.tabText, activeTab === 'solicitudes' && styles.tabTextActive]}>
+                Farmacias ({solicitudes.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </LinearGradient>
 
       <ScrollView
@@ -150,6 +208,64 @@ export default function ModerationScreen() {
           <View style={styles.loadingBox}>
             <ActivityIndicator color="#1A7A4A" size="large" />
           </View>
+        ) : activeTab === 'solicitudes' && isAdmin ? (
+          solicitudes.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyEmoji}>✅</Text>
+              <Text style={styles.emptyTitle}>No hay solicitudes pendientes</Text>
+              <Text style={styles.emptyText}>
+                Todas las solicitudes de registro de farmacias han sido procesadas.
+              </Text>
+            </View>
+          ) : (
+            solicitudes.map((s) => (
+              <View key={s.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.cardIconBox, { backgroundColor: '#FFF3E0' }]}>
+                    <Store size={20} color="#E65100" />
+                  </View>
+                  <View style={styles.cardHeaderText}>
+                    <Text style={styles.cardMedName}>{s.nombreComercial}</Text>
+                    <Text style={styles.cardPharm}>RNC: {s.rnc}</Text>
+                    <Text style={styles.cardPharm}>{s.ciudad} · {s.direccion}</Text>
+                    <Text style={styles.cardPharm}>Tel: {s.telefonoFarmacia} · {s.horario}</Text>
+                    <Text style={styles.cardDate}>Propietario: {s.nombrePropietario} · Cédula: {s.cedulaPropietario}</Text>
+                    <Text style={styles.cardDate}>{formatDate(s.createdAt)}</Text>
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.rejectBtn]}
+                    onPress={() => handleRechazarSolicitud(s.id)}
+                    disabled={actioning === s.id}
+                  >
+                    {actioning === s.id ? (
+                      <ActivityIndicator color="#D32F2F" size="small" />
+                    ) : (
+                      <>
+                        <X size={18} color="#D32F2F" />
+                        <Text style={styles.rejectText}>Rechazar</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.verifyBtn]}
+                    onPress={() => handleAprobarSolicitud(s.id)}
+                    disabled={actioning === s.id}
+                  >
+                    {actioning === s.id ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <>
+                        <Check size={18} color="#FFFFFF" />
+                        <Text style={styles.verifyText}>Aprobar</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )
         ) : reports.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyEmoji}>✅</Text>
@@ -287,6 +403,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
   },
+  tabBar: {
+    flexDirection: 'row', gap: 8, marginTop: 16,
+  },
+  tab: {
+    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  tabActive: { backgroundColor: '#FFFFFF' },
+  tabText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.7)' },
+  tabTextActive: { color: '#1A7A4A' },
   content: { flex: 1 },
   contentInner: { padding: 20, paddingBottom: 40 },
   loadingBox: { padding: 40, alignItems: 'center' },

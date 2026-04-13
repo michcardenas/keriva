@@ -20,6 +20,7 @@ import { signOut } from '@/lib/api/auth';
 import { getMyReports, getMyStats, getMyPoints, type MyReport } from '@/lib/api/precios';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import type { Rol } from '@/lib/api/perfiles';
+import { getMySolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
 import LanguageSelector from '@/components/LanguageSelector';
 
 const ROL_LABELS: Record<Rol, string> = {
@@ -53,19 +54,22 @@ export default function ProfileScreen() {
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [solicitud, setSolicitud] = useState<SolicitudFarmacia | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
       setDataError(null);
-      const [r, s, p] = await Promise.all([
+      const [r, s, p, sol] = await Promise.all([
         getMyReports(user.id, 20),
         getMyStats(user.id),
         getMyPoints(user.id),
+        getMySolicitud(user.id),
       ]);
       setReports(r);
       setStats(s);
       setPoints(p);
+      setSolicitud(sol);
     } catch {
       setDataError('No se pudieron cargar tus datos. Verifica tu conexión.');
     } finally {
@@ -158,6 +162,49 @@ export default function ProfileScreen() {
             <Text style={styles.errorBannerRetry}>Reintentar</Text>
           </TouchableOpacity>
         )}
+
+        {/* Pharmacy registration CTA / status — only for regular users */}
+        {rol === 'usuario' && !loading && (
+          !solicitud ? (
+            <TouchableOpacity
+              style={styles.farmaciaCta}
+              onPress={() => router.push('/registro-farmacia')}
+            >
+              <Store size={22} color="#1A7A4A" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.farmaciaCtaTitle}>¿Tienes una farmacia?</Text>
+                <Text style={styles.farmaciaCtaText}>Regístrala en Keriva y gestiona tus precios</Text>
+              </View>
+              <Text style={styles.farmaciaCtaArrow}>→</Text>
+            </TouchableOpacity>
+          ) : solicitud.estado === 'pendiente' ? (
+            <View style={styles.farmaciaStatusPending}>
+              <Clock size={20} color="#E65100" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.farmaciaStatusTitle}>Solicitud en revisión</Text>
+                <Text style={styles.farmaciaStatusText}>
+                  Tu solicitud para "{solicitud.nombreComercial}" está siendo revisada
+                </Text>
+              </View>
+            </View>
+          ) : solicitud.estado === 'rechazada' ? (
+            <TouchableOpacity
+              style={styles.farmaciaStatusRejected}
+              onPress={() => router.push('/registro-farmacia')}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.farmaciaStatusTitle}>Solicitud rechazada</Text>
+                <Text style={styles.farmaciaStatusText}>
+                  {solicitud.motivoRechazo || 'Tu solicitud no fue aprobada'}
+                </Text>
+                <Text style={[styles.farmaciaCtaText, { color: '#D32F2F', marginTop: 4 }]}>
+                  Toca para volver a solicitar →
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : null
+        )}
+
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Trophy size={24} color="#1A7A4A" />
@@ -386,6 +433,25 @@ const styles = StyleSheet.create({
   },
   errorBannerText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#D32F2F', flex: 1 },
   errorBannerRetry: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#D32F2F', marginLeft: 12 },
+  farmaciaCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#E8F5E9', marginHorizontal: 20, marginTop: 12,
+    padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#C8E6C9',
+  },
+  farmaciaCtaTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#1A7A4A' },
+  farmaciaCtaText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
+  farmaciaCtaArrow: { fontFamily: 'Poppins-Bold', fontSize: 20, color: '#1A7A4A' },
+  farmaciaStatusPending: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFF3E0', marginHorizontal: 20, marginTop: 12,
+    padding: 14, borderRadius: 12,
+  },
+  farmaciaStatusRejected: {
+    backgroundColor: '#FFEBEE', marginHorizontal: 20, marginTop: 12,
+    padding: 14, borderRadius: 12,
+  },
+  farmaciaStatusTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#0F1F17' },
+  farmaciaStatusText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
   content: { flex: 1 },
   statsGrid: {
     flexDirection: 'row',

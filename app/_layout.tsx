@@ -97,6 +97,7 @@ function RootNavigator() {
       <Stack.Screen name="auth" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="detail" />
+      <Stack.Screen name="registro-farmacia" />
       <Stack.Screen name="+not-found" />
     </Stack>
   );

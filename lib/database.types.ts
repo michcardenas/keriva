@@ -38,6 +38,24 @@ export type Precio = {
   verificado: boolean;
 };
 
+export type SolicitudFarmaciaRow = {
+  id: number;
+  usuario_id: string;
+  estado: 'pendiente' | 'aprobada' | 'rechazada';
+  nombre_comercial: string;
+  rnc: string;
+  direccion: string;
+  ciudad: string;
+  telefono_farmacia: string;
+  horario: string;
+  nombre_propietario: string;
+  cedula_propietario: string;
+  motivo_rechazo: string | null;
+  revisado_por: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // Shapes returned by the joined queries used in the app.
 // These mirror what PostgREST returns when using `select=...,Precios(...)` etc.
 
