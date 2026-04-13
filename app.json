@@ -28,7 +28,7 @@
       "package": "app.keriva.farmacias",
       "config": {
         "googleMaps": {
-          "apiKey": ""
+          "apiKey": "AIzaSyCLBy9-U16R-yYLF4XojNaO5GbM95Us33M"
         }
       }
     },

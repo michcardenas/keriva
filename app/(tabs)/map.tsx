@@ -1,613 +1,445 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Animated } from 'react-native';
-import { MapPin, Phone, Clock, ArrowLeft, CircleAlert as AlertCircle } from 'lucide-react-native';
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
+import { MapPin, Phone, Clock, Navigation, X, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getActivePharmacies, type PharmacyView } from '@/lib/api/farmacias';
 import LoginNudge from '@/components/LoginNudge';
 
-const FILTERS = ['Abierto ahora', 'Más cercano', 'Acepta seguro'];
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
 
-type Pharmacy = PharmacyView;
+const SANTIAGO_CENTER = { lng: -70.6970, lat: 19.4517 };
+const DEFAULT_ZOOM = 13;
 
 export default function MapScreen() {
   const router = useRouter();
-  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
-  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
-  const [selectedPharmacy, setSelectedPharmacy] = useState<Pharmacy | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
+
+  const [pharmacies, setPharmacies] = useState<PharmacyView[]>([]);
+  const [selectedPharmacy, setSelectedPharmacy] = useState<PharmacyView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const slideAnim = useRef(new Animated.Value(300)).current;
+  const [mapReady, setMapReady] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Load pharmacies
   useEffect(() => {
-    loadPharmacies();
+    (async () => {
+      try {
+        setError(null);
+        const data = await getActivePharmacies();
+        setPharmacies(data);
+      } catch {
+        setError('Error al cargar farmacias');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
+  // Get user location
   useEffect(() => {
-    if (selectedPharmacy) {
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 8,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: 300,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [selectedPharmacy]);
+    if (Platform.OS !== 'web' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => {
+        // Geolocation denied or unavailable — use Santiago center
+      },
+      { enableHighAccuracy: false, timeout: 8000 },
+    );
+  }, []);
 
-  async function loadPharmacies() {
-    try {
-      setError(null);
-      const data = await getActivePharmacies();
-      setPharmacies(data);
-    } catch {
-      setError('Error al cargar farmacias. Verifica la conexión.');
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Init Mapbox map (web only)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !mapContainerRef.current || !MAPBOX_TOKEN) return;
 
-  const toggleFilter = (filter: string) => {
-    if (selectedFilters.includes(filter)) {
-      setSelectedFilters(selectedFilters.filter((f) => f !== filter));
-    } else {
-      setSelectedFilters([...selectedFilters, filter]);
-    }
-  };
+    let map: mapboxgl.Map;
 
-  const handleMarkerPress = (pharmacy: Pharmacy) => {
-    setSelectedPharmacy(pharmacy);
-  };
+    (async () => {
+      const mapboxgl = (await import('mapbox-gl')).default;
 
-  const closePharmacyCard = () => {
-    setSelectedPharmacy(null);
-  };
+      // Load Mapbox CSS
+      if (!document.getElementById('mapbox-css')) {
+        const link = document.createElement('link');
+        link.id = 'mapbox-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css';
+        document.head.appendChild(link);
+      }
 
-  const latLngToPosition = (lat: number, lng: number) => {
-    const SANTIAGO_BOUNDS = {
-      minLat: 19.430,
-      maxLat: 19.480,
-      minLng: -70.720,
-      maxLng: -70.670,
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+
+      const center = userLocation
+        ? [userLocation.lng, userLocation.lat] as [number, number]
+        : [SANTIAGO_CENTER.lng, SANTIAGO_CENTER.lat] as [number, number];
+
+      map = new mapboxgl.Map({
+        container: mapContainerRef.current!,
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center,
+        zoom: DEFAULT_ZOOM,
+        attributionControl: false,
+      });
+
+      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      map.addControl(
+        new mapboxgl.GeolocateControl({
+          positionOptions: { enableHighAccuracy: true },
+          trackUserLocation: true,
+          showUserHeading: true,
+        }),
+        'top-right',
+      );
+
+      map.on('load', () => {
+        setMapReady(true);
+      });
+
+      mapRef.current = map;
+    })();
+
+    return () => {
+      map?.remove();
+      mapRef.current = null;
     };
-    const x = ((lng - SANTIAGO_BOUNDS.minLng) / (SANTIAGO_BOUNDS.maxLng - SANTIAGO_BOUNDS.minLng)) * 100;
-    const y = ((SANTIAGO_BOUNDS.maxLat - lat) / (SANTIAGO_BOUNDS.maxLat - SANTIAGO_BOUNDS.minLat)) * 100;
+  }, [userLocation]);
 
-    return {
-      left: `${Math.max(5, Math.min(95, x))}%` as `${number}%`,
-      top: `${Math.max(5, Math.min(95, y))}%` as `${number}%`,
-    };
-  };
+  // Add pharmacy markers when map + data are ready
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || pharmacies.length === 0) return;
+    if (Platform.OS !== 'web') return;
+
+    (async () => {
+      const mapboxgl = (await import('mapbox-gl')).default;
+      const map = mapRef.current!;
+
+      // Clear old markers
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+
+      pharmacies.forEach((pharm) => {
+        if (!pharm.latitude || !pharm.longitude) return;
+
+        // Create custom marker element
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 36px; height: 36px; border-radius: 50%;
+          background: ${pharm.isCheapest ? '#7ED957' : '#1A7A4A'};
+          border: 3px solid #FFFFFF;
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          transition: transform 0.2s;
+        `;
+        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${pharm.isCheapest ? '#0F1F17' : '#FFFFFF'}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+        el.onmouseenter = () => {
+          el.style.transform = 'scale(1.2)';
+        };
+        el.onmouseleave = () => {
+          el.style.transform = 'scale(1)';
+        };
+
+        const marker = new mapboxgl.Marker({ element: el })
+          .setLngLat([pharm.longitude, pharm.latitude])
+          .addTo(map);
+
+        el.addEventListener('click', () => {
+          setSelectedPharmacy(pharm);
+          map.flyTo({
+            center: [pharm.longitude, pharm.latitude],
+            zoom: 15,
+            duration: 800,
+          });
+        });
+
+        markersRef.current.push(marker);
+      });
+
+      // Fit bounds to show all pharmacies
+      if (pharmacies.length > 1) {
+        const bounds = new mapboxgl.LngLatBounds();
+        pharmacies.forEach((p) => {
+          if (p.latitude && p.longitude) bounds.extend([p.longitude, p.latitude]);
+        });
+        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 1000 });
+      }
+    })();
+  }, [mapReady, pharmacies]);
+
+  const closeCard = useCallback(() => setSelectedPharmacy(null), []);
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
+      <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#7ED957" />
         <Text style={styles.loadingText}>Cargando farmacias...</Text>
       </View>
     );
   }
 
+  // Fallback for non-web or missing token
+  if (Platform.OS !== 'web' || !MAPBOX_TOKEN) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MapPin size={48} color="#7ED957" />
+        <Text style={styles.loadingText}>
+          {!MAPBOX_TOKEN ? 'Token de Mapbox no configurado' : 'Mapa disponible solo en web por ahora'}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapGrid}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <View key={i} style={styles.gridLine} />
-            ))}
-          </View>
-
-          {pharmacies.length === 0 ? (
-            <View style={styles.emptyMapState}>
-              <Text style={styles.emptyMapEmoji}>🏥</Text>
-              <Text style={styles.emptyMapText}>No hay farmacias disponibles</Text>
-            </View>
-          ) : (
-            pharmacies.map((pharmacy) => {
-              const position = latLngToPosition(pharmacy.latitude, pharmacy.longitude);
-              return (
-                <TouchableOpacity
-                  key={pharmacy.id}
-                  style={[styles.pin, { left: position.left, top: position.top }]}
-                  onPress={() => handleMarkerPress(pharmacy)}
-                >
-                  <View
-                    style={[
-                      styles.pinMarker,
-                      pharmacy.isCheapest && styles.pinMarkerCheapest,
-                      selectedPharmacy?.id === pharmacy.id && styles.pinMarkerSelected,
-                    ]}
-                  >
-                    <MapPin
-                      size={20}
-                      color={pharmacy.isCheapest ? '#0F1F17' : '#FFFFFF'}
-                      fill={pharmacy.isCheapest ? '#7ED957' : '#1A7A4A'}
-                    />
-                  </View>
-                  <View style={styles.pinLabel}>
-                    <Text style={styles.pinLabelText} numberOfLines={1}>
-                      {pharmacy.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.push('/(tabs)')}
-      >
-        <ArrowLeft size={24} color="#FFFFFF" />
-      </TouchableOpacity>
-
       {error && (
         <View style={styles.errorBanner}>
-          <AlertCircle size={20} color="#D32F2F" />
+          <AlertCircle size={18} color="#D32F2F" />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
 
-      <View style={styles.mapControls}>
-        <View style={styles.filterChipsContainer}>
-          {FILTERS.map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterChip,
-                selectedFilters.includes(filter) && styles.filterChipActive,
-              ]}
-              onPress={() => toggleFilter(filter)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedFilters.includes(filter) && styles.filterChipTextActive,
-                ]}
-              >
-                {filter}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      {/* Mapbox container */}
+      <View style={styles.mapWrapper}>
+        <div
+          ref={mapContainerRef}
+          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+        />
+
+        {!mapReady && (
+          <View style={styles.mapLoading}>
+            <ActivityIndicator size="large" color="#7ED957" />
+          </View>
+        )}
       </View>
 
+      {/* Bottom drawer */}
       <View style={styles.drawer}>
         <View style={styles.drawerHandle} />
         <Text style={styles.drawerTitle}>
-          {pharmacies.length} farmacias encontradas
+          {pharmacies.length} farmacias en Santiago
         </Text>
-
-        <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
-          {pharmacies.map((pharmacy) => (
+        <ScrollView style={styles.drawerList} showsVerticalScrollIndicator={false}>
+          {pharmacies.map((pharm) => (
             <TouchableOpacity
-              key={pharmacy.id}
-              style={styles.resultCard}
-              onPress={() => handleMarkerPress(pharmacy)}
+              key={pharm.id}
+              style={[
+                styles.pharmCard,
+                selectedPharmacy?.id === pharm.id && styles.pharmCardActive,
+              ]}
+              onPress={() => {
+                setSelectedPharmacy(pharm);
+                if (mapRef.current) {
+                  mapRef.current.flyTo({
+                    center: [pharm.longitude, pharm.latitude],
+                    zoom: 15,
+                    duration: 800,
+                  });
+                }
+              }}
             >
-              <View style={styles.resultLeft}>
-                <View
-                  style={[
-                    styles.resultPin,
-                    pharmacy.isCheapest && styles.resultPinCheapest,
-                  ]}
-                >
-                  <MapPin
-                    size={18}
-                    color={pharmacy.isCheapest ? '#0F1F17' : '#FFFFFF'}
-                  />
+              <View style={styles.pharmCardLeft}>
+                <View style={[
+                  styles.pharmPin,
+                  pharm.isCheapest && styles.pharmPinCheapest,
+                ]}>
+                  <MapPin size={16} color={pharm.isCheapest ? '#0F1F17' : '#FFFFFF'} />
                 </View>
-                <View style={styles.resultInfo}>
-                  <Text style={styles.resultName}>{pharmacy.name}</Text>
-                  <Text style={styles.resultAddress}>{pharmacy.address}</Text>
+                <View style={styles.pharmInfo}>
+                  <Text style={styles.pharmName}>{pharm.name}</Text>
+                  <Text style={styles.pharmAddress} numberOfLines={1}>{pharm.address}</Text>
                 </View>
               </View>
-              <View style={styles.resultRight}>
-                {pharmacy.isCheapest && (
-                  <View style={styles.resultBestBadge}>
-                    <Text style={styles.resultBestBadgeText}>MEJOR PRECIO</Text>
-                  </View>
-                )}
-                {pharmacy.minPrice > 0 && (
-                  <Text style={styles.resultPrice}>RD${pharmacy.minPrice.toFixed(2)}</Text>
-                )}
-              </View>
+              {pharm.isCheapest && (
+                <View style={styles.bestBadge}>
+                  <Text style={styles.bestBadgeText}>MEJOR</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
 
+      {/* Selected pharmacy detail card */}
       {selectedPharmacy && (
-        <Animated.View
-          style={[
-            styles.pharmacyDetailCard,
-            { transform: [{ translateY: slideAnim }] },
-          ]}
-        >
-          <View style={styles.pharmacyDetailHeader}>
-            <View style={styles.pharmacyDetailTitleRow}>
-              <MapPin size={24} color="#1A7A4A" />
-              <Text style={styles.pharmacyDetailTitle}>{selectedPharmacy.name}</Text>
+        <View style={styles.detailCard}>
+          <View style={styles.detailHeader}>
+            <View style={styles.detailTitleRow}>
+              <MapPin size={22} color="#1A7A4A" />
+              <Text style={styles.detailTitle} numberOfLines={1}>{selectedPharmacy.name}</Text>
             </View>
-            <TouchableOpacity onPress={closePharmacyCard} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+            <TouchableOpacity onPress={closeCard} style={styles.closeBtn}>
+              <X size={18} color="#666" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.pharmacyDetailInfo}>
-            <View style={styles.pharmacyDetailRow}>
-              <MapPin size={18} color="#666" />
-              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.address}</Text>
+          <View style={styles.detailBody}>
+            <View style={styles.detailRow}>
+              <MapPin size={16} color="#666" />
+              <Text style={styles.detailText}>{selectedPharmacy.address}</Text>
             </View>
-
-            <View style={styles.pharmacyDetailRow}>
-              <Clock size={18} color="#666" />
-              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.hours}</Text>
+            <View style={styles.detailRow}>
+              <Clock size={16} color="#666" />
+              <Text style={styles.detailText}>{selectedPharmacy.hours}</Text>
             </View>
-
-            <View style={styles.pharmacyDetailRow}>
-              <Phone size={18} color="#666" />
-              <Text style={styles.pharmacyDetailText}>{selectedPharmacy.phone}</Text>
+            <View style={styles.detailRow}>
+              <Phone size={16} color="#666" />
+              <Text style={styles.detailText}>{selectedPharmacy.phone}</Text>
             </View>
-
-            {selectedPharmacy.minPrice > 0 && (
-              <View style={styles.pharmacyPriceRow}>
-                <Text style={styles.pharmacyPriceLabel}>Precio más bajo:</Text>
-                <Text style={styles.pharmacyPriceValue}>
-                  RD${selectedPharmacy.minPrice.toFixed(2)}
-                </Text>
-              </View>
-            )}
           </View>
-        </Animated.View>
+
+          {selectedPharmacy.minPrice > 0 && (
+            <View style={styles.detailPrice}>
+              <Text style={styles.detailPriceLabel}>Precio más bajo:</Text>
+              <Text style={styles.detailPriceValue}>
+                RD${selectedPharmacy.minPrice.toFixed(2)}
+              </Text>
+            </View>
+          )}
+        </View>
       )}
 
-      <LoginNudge delayMs={4000} />
+      <LoginNudge delayMs={6000} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0F1F17',
-  },
-  mapContainer: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    backgroundColor: '#1A2E23',
-    position: 'relative',
-  },
-  mapGrid: {
-    flex: 1,
-    opacity: 0.1,
-  },
-  gridLine: {
-    height: 1,
-    backgroundColor: '#7ED957',
-    marginVertical: 20,
-  },
-  pin: {
+  container: { flex: 1, backgroundColor: '#0F1F17' },
+  centerContent: { justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingText: { fontFamily: 'DMSans-Medium', fontSize: 14, color: '#7ED957', marginTop: 8 },
+  errorBanner: {
     position: 'absolute',
-    alignItems: 'center',
-  },
-  pinMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1A7A4A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  pinMarkerCheapest: {
-    backgroundColor: '#7ED957',
-    borderColor: '#0F1F17',
-  },
-  pinMarkerSelected: {
-    transform: [{ scale: 1.2 }],
-    borderWidth: 4,
-  },
-  pinLabel: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 6,
-    maxWidth: 120,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  pinLabelText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 11,
-    color: '#0F1F17',
-    textAlign: 'center',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(26, 122, 74, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1001,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  emptyMapState: {
-    position: 'absolute',
-    top: '40%',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyMapEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyMapText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 16,
-    color: '#7ED957',
-    textAlign: 'center',
-  },
-  mapControls: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
+    top: 50,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFEBEE',
+    padding: 12,
+    borderRadius: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  filterChipsContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
+    zIndex: 100,
   },
-  filterChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  filterChipActive: {
-    backgroundColor: '#7ED957',
-    borderColor: '#7ED957',
-  },
-  filterChipText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 13,
-    color: '#0F1F17',
-  },
-  filterChipTextActive: {
-    color: '#0F1F17',
+  errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#D32F2F', flex: 1 },
+  mapWrapper: { flex: 1, position: 'relative' },
+  mapLoading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0F1F17',
   },
   drawer: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    maxHeight: '45%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    maxHeight: '38%',
   },
   drawerHandle: {
-    width: 40,
+    width: 36,
     height: 4,
     backgroundColor: '#E0E0E0',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   drawerTitle: {
     fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
+    fontSize: 16,
     color: '#0F1F17',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  resultsList: {
-    flex: 1,
-  },
-  resultCard: {
+  drawerList: { flex: 1 },
+  pharmCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#F8F9FA',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 8,
   },
-  resultLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
+  pharmCardActive: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#1A7A4A',
   },
-  resultPin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  pharmCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
+  pharmPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#1A7A4A',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  resultPinCheapest: {
-    backgroundColor: '#7ED957',
-  },
-  resultInfo: {
-    flex: 1,
-  },
-  resultName: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 15,
-    color: '#0F1F17',
-    marginBottom: 4,
-  },
-  resultAddress: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
-  },
-  resultRight: {
-    alignItems: 'flex-end',
-  },
-  resultBestBadge: {
+  pharmPinCheapest: { backgroundColor: '#7ED957' },
+  pharmInfo: { flex: 1 },
+  pharmName: { fontFamily: 'DMSans-Medium', fontSize: 14, color: '#0F1F17' },
+  pharmAddress: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
+  bestBadge: {
     backgroundColor: '#E8F5E9',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 4,
-    marginBottom: 4,
+    marginLeft: 8,
   },
-  resultBestBadgeText: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 10,
-    color: '#1A7A4A',
-  },
-  resultPrice: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 18,
-    color: '#1A7A4A',
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#7ED957',
-    marginTop: 12,
-  },
-  errorBanner: {
+  bestBadgeText: { fontFamily: 'DMSans-Bold', fontSize: 9, color: '#1A7A4A' },
+  detailCard: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
-    backgroundColor: '#FFEBEE',
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 1000,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  errorText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#D32F2F',
-    flex: 1,
-  },
-  pharmacyDetailCard: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: '40%',
+    left: 12,
+    right: 12,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowRadius: 10,
     elevation: 8,
+    zIndex: 50,
   },
-  pharmacyDetailHeader: {
+  detailHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  pharmacyDetailTitleRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
+    marginBottom: 12,
   },
-  pharmacyDetailTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 20,
-    color: '#0F1F17',
-    flex: 1,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  detailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  detailTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 17, color: '#0F1F17', flex: 1 },
+  closeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#F0F0F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeButtonText: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 18,
-    color: '#666',
-  },
-  pharmacyDetailInfo: {
-    gap: 16,
-  },
-  pharmacyDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  pharmacyDetailText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 15,
-    color: '#333',
-    flex: 1,
-  },
-  pharmacyPriceRow: {
+  detailBody: { gap: 10 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  detailText: { fontFamily: 'DMSans-Regular', fontSize: 14, color: '#333', flex: 1 },
+  detailPrice: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#E8F5E9',
     padding: 12,
     borderRadius: 8,
-    marginTop: 8,
+    marginTop: 12,
   },
-  pharmacyPriceLabel: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#1A7A4A',
-  },
-  pharmacyPriceValue: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 20,
-    color: '#1A7A4A',
-  },
+  detailPriceLabel: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#1A7A4A' },
+  detailPriceValue: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#1A7A4A' },
 });
