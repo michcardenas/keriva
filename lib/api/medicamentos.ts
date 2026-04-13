@@ -89,14 +89,39 @@ export async function getAllMedicationOptions(): Promise<MedicationOption[]> {
 }
 
 export async function getPopularMedications(limit = 6): Promise<MedicationCard[]> {
+  // Fast query: skip the Precios join for initial page load.
+  // Use precio_referencia_rd instead — real prices load on detail tap.
   const { data, error } = await supabase
     .from('Medicamentos')
-    .select(SELECT_MEDICAMENTO)
+    .select('id, nombre, concentracion, categoria, precio_referencia_rd')
     .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
-  return ((data as unknown as MedicamentoConPrecios[]) ?? []).map(mapMedicamento);
+  type FastRow = { id: number; nombre: string; concentracion: string | null; categoria: string | null; precio_referencia_rd: string | number | null };
+  return ((data as FastRow[]) ?? []).map((med) => ({
+    id: String(med.id),
+    name: med.nombre,
+    dosage: med.concentracion ?? '',
+    category: med.categoria ?? '',
+    minPrice: toNumber(med.precio_referencia_rd),
+    referencePrice: toNumber(med.precio_referencia_rd),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Module-level prefetch: starts the network call as soon as this module is
+// imported (during JS parse), running IN PARALLEL with auth/fonts/routing.
+// By the time the Search screen mounts, data is usually already cached.
+// ---------------------------------------------------------------------------
+let _cachedPopular: MedicationCard[] | null = null;
+const _prefetch = getPopularMedications(6)
+  .then((data) => { _cachedPopular = data; return data; })
+  .catch(() => [] as MedicationCard[]);
+
+export function getPopularMedicationsCached(): Promise<MedicationCard[]> {
+  if (_cachedPopular) return Promise.resolve(_cachedPopular);
+  return _prefetch;
 }
 
 export async function searchMedications(params: {

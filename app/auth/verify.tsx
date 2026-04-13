@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import { resendConfirmationEmail } from '@/lib/api/auth';
+import { supabase } from '@/lib/supabase';
 
 export default function VerifyScreen() {
   const router = useRouter();
@@ -12,6 +13,28 @@ export default function VerifyScreen() {
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+
+  // Listen for the signup confirmation callback.
+  // When the user clicks the confirmation link, Supabase detects the
+  // #access_token=xxx&type=signup hash and fires SIGNED_IN.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setVerified(true);
+      }
+    });
+
+    // Also check if there's already an active session (user may have
+    // already confirmed via another tab/device)
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setVerified(true);
+    });
+
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   async function handleResend() {
     if (!email) {
@@ -28,6 +51,28 @@ export default function VerifyScreen() {
       return;
     }
     setInfo('Correo de confirmación reenviado');
+  }
+
+  if (verified) {
+    return (
+      <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+        <View style={styles.inner}>
+          <View style={styles.content}>
+            <Text style={styles.emoji}>✅</Text>
+            <Text style={styles.title}>¡Cuenta verificada!</Text>
+            <Text style={styles.subtitle}>
+              Tu cuenta ha sido confirmada exitosamente.
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.replace('/(tabs)')}
+            >
+              <Text style={styles.primaryButtonText}>Comenzar a usar Keriva</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </LinearGradient>
+    );
   }
 
   return (

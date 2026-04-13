@@ -4,7 +4,7 @@ import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Da
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import {
-  getPopularMedications,
+  getPopularMedicationsCached,
   searchMedications as apiSearchMedications,
   type MedicationCard,
 } from '@/lib/api/medicamentos';
@@ -35,7 +35,7 @@ export default function SearchScreen() {
     (async () => {
       try {
         setError(null);
-        const meds = await getPopularMedications(6);
+        const meds = await getPopularMedicationsCached();
         if (!cancelled) setPopularMeds(meds);
       } catch {
         if (!cancelled) {

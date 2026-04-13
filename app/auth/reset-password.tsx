@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Lock } from 'lucide-react-native';
 import { updateUserPassword, signOut } from '@/lib/api/auth';
+import { supabase } from '@/lib/supabase';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -22,6 +23,36 @@ export default function ResetPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Wait for Supabase to establish a recovery session from the URL hash
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    // Supabase client (with detectSessionInUrl: true) will detect the
+    // #access_token=xxx&type=recovery hash and fire PASSWORD_RECOVERY.
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+        setSessionReady(true);
+      }
+    });
+
+    // Also check if there's already an active session (e.g. user refreshed)
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setSessionReady(true);
+    });
+
+    // Timeout: if after 8s we still don't have a session, show error
+    const timeout = setTimeout(() => {
+      setSessionReady((prev) => {
+        if (!prev) setError('El enlace expiró o es inválido. Solicita uno nuevo.');
+        return prev;
+      });
+    }, 8000);
+
+    return () => {
+      sub.subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, []);
 
   async function handleSubmit() {
     setError(null);
@@ -48,6 +79,9 @@ export default function ResetPasswordScreen() {
     router.replace('/auth/login');
   }
 
+  const showForm = sessionReady && !done;
+  const showWaiting = !sessionReady && !error && !done;
+
   return (
     <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
       <KeyboardAvoidingView
@@ -61,10 +95,19 @@ export default function ResetPasswordScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.title}>Nueva contraseña</Text>
-            <Text style={styles.subtitle}>Elige una contraseña segura</Text>
+            <Text style={styles.subtitle}>
+              {showWaiting ? 'Verificando enlace...' : 'Elige una contraseña segura'}
+            </Text>
           </View>
 
-          {done ? (
+          {showWaiting && (
+            <View style={styles.waitingBox}>
+              <ActivityIndicator size="large" color="#7ED957" />
+              <Text style={styles.waitingText}>Validando tu enlace de recuperación...</Text>
+            </View>
+          )}
+
+          {done && (
             <View style={styles.successBox}>
               <Text style={styles.successEmoji}>✅</Text>
               <Text style={styles.successTitle}>Contraseña actualizada</Text>
@@ -75,47 +118,65 @@ export default function ResetPasswordScreen() {
                 <Text style={styles.primaryButtonText}>Ir al inicio de sesión</Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          )}
+
+          {!showWaiting && !done && (
             <View style={styles.form}>
-              <View style={styles.inputWrapper}>
-                <Lock size={20} color="rgba(255,255,255,0.6)" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nueva contraseña"
-                  placeholderTextColor="rgba(255,255,255,0.5)"
-                  secureTextEntry
-                  value={password}
-                  onChangeText={setPassword}
-                  editable={!loading}
-                />
-              </View>
+              {!sessionReady && error && (
+                <>
+                  <Text style={styles.errorText}>{error}</Text>
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={() => router.replace('/auth/forgot-password')}
+                  >
+                    <Text style={styles.primaryButtonText}>Solicitar nuevo enlace</Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
-              <View style={styles.inputWrapper}>
-                <Lock size={20} color="rgba(255,255,255,0.6)" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirmar contraseña"
-                  placeholderTextColor="rgba(255,255,255,0.5)"
-                  secureTextEntry
-                  value={confirm}
-                  onChangeText={setConfirm}
-                  editable={!loading}
-                />
-              </View>
+              {sessionReady && (
+                <>
+                  <View style={styles.inputWrapper}>
+                    <Lock size={20} color="rgba(255,255,255,0.6)" />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Nueva contraseña"
+                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      secureTextEntry
+                      value={password}
+                      onChangeText={setPassword}
+                      editable={!loading}
+                    />
+                  </View>
 
-              {error && <Text style={styles.errorText}>{error}</Text>}
+                  <View style={styles.inputWrapper}>
+                    <Lock size={20} color="rgba(255,255,255,0.6)" />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirmar contraseña"
+                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      secureTextEntry
+                      value={confirm}
+                      onChangeText={setConfirm}
+                      editable={!loading}
+                    />
+                  </View>
 
-              <TouchableOpacity
-                style={[styles.primaryButton, loading && styles.buttonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#1A7A4A" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
-                )}
-              </TouchableOpacity>
+                  {error && <Text style={styles.errorText}>{error}</Text>}
+
+                  <TouchableOpacity
+                    style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#1A7A4A" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           )}
         </ScrollView>
@@ -135,6 +196,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: 'rgba(255,255,255,0.7)',
     marginTop: 8,
+  },
+  waitingBox: { alignItems: 'center', gap: 16, paddingTop: 40 },
+  waitingText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
   },
   form: { gap: 16 },
   inputWrapper: {

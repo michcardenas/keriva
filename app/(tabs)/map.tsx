@@ -8,28 +8,37 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { MapPin, Phone, Clock, Navigation, X, CircleAlert as AlertCircle } from 'lucide-react-native';
+import { Linking } from 'react-native';
+import { MapPin, Phone, Clock, Navigation, X, CircleAlert as AlertCircle, ExternalLink } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getActivePharmacies, type PharmacyView } from '@/lib/api/farmacias';
 import LoginNudge from '@/components/LoginNudge';
 
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
 
-const SANTIAGO_CENTER = { lng: -70.6970, lat: 19.4517 };
+// mapbox-gl is loaded from CDN (see public/index.html) to avoid Metro bundler issues
+function getMapboxGL(): any {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && (window as any).mapboxgl) {
+    return (window as any).mapboxgl;
+  }
+  return null;
+}
+
+const SANTIAGO_CENTER: [number, number] = [-70.6970, 19.4517];
 const DEFAULT_ZOOM = 13;
 
 export default function MapScreen() {
   const router = useRouter();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const mapInitializedRef = useRef(false);
 
   const [pharmacies, setPharmacies] = useState<PharmacyView[]>([]);
   const [selectedPharmacy, setSelectedPharmacy] = useState<PharmacyView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   // Load pharmacies
   useEffect(() => {
@@ -46,48 +55,26 @@ export default function MapScreen() {
     })();
   }, []);
 
-  // Get user location
+  // Init Mapbox map ONCE when the container div is available
   useEffect(() => {
-    if (Platform.OS !== 'web' || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      () => {
-        // Geolocation denied or unavailable — use Santiago center
-      },
-      { enableHighAccuracy: false, timeout: 8000 },
-    );
-  }, []);
+    if (Platform.OS !== 'web' || !MAPBOX_TOKEN) return;
+    if (mapInitializedRef.current) return;
 
-  // Init Mapbox map (web only)
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !mapContainerRef.current || !MAPBOX_TOKEN) return;
+    // Wait for the container to be in the DOM
+    const tryInit = () => {
+      const container = mapContainerRef.current;
+      if (!container || mapInitializedRef.current) return;
 
-    let map: mapboxgl.Map;
+      const mapboxgl = getMapboxGL();
+      if (!mapboxgl) return;
 
-    (async () => {
-      const mapboxgl = (await import('mapbox-gl')).default;
-
-      // Load Mapbox CSS
-      if (!document.getElementById('mapbox-css')) {
-        const link = document.createElement('link');
-        link.id = 'mapbox-css';
-        link.rel = 'stylesheet';
-        link.href = 'https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css';
-        document.head.appendChild(link);
-      }
-
+      mapInitializedRef.current = true;
       mapboxgl.accessToken = MAPBOX_TOKEN;
 
-      const center = userLocation
-        ? [userLocation.lng, userLocation.lat] as [number, number]
-        : [SANTIAGO_CENTER.lng, SANTIAGO_CENTER.lat] as [number, number];
-
-      map = new mapboxgl.Map({
-        container: mapContainerRef.current!,
+      const map = new mapboxgl.Map({
+        container,
         style: 'mapbox://styles/mapbox/dark-v11',
-        center,
+        center: SANTIAGO_CENTER,
         zoom: DEFAULT_ZOOM,
         attributionControl: false,
       });
@@ -107,86 +94,121 @@ export default function MapScreen() {
       });
 
       mapRef.current = map;
-    })();
-
-    return () => {
-      map?.remove();
-      mapRef.current = null;
     };
-  }, [userLocation]);
 
-  // Add pharmacy markers when map + data are ready
+    // Try immediately, then poll briefly for the container
+    tryInit();
+    if (!mapInitializedRef.current) {
+      const interval = setInterval(() => {
+        tryInit();
+        if (mapInitializedRef.current) clearInterval(interval);
+      }, 200);
+      // Stop polling after 10s
+      const timeout = setTimeout(() => clearInterval(interval), 10000);
+      return () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+      };
+    }
+  }, [loading]); // re-check when loading changes (container appears)
+
+  // Add pharmacy markers when map + data are ready — runs only ONCE
   useEffect(() => {
     if (!mapReady || !mapRef.current || pharmacies.length === 0) return;
     if (Platform.OS !== 'web') return;
 
-    (async () => {
-      const mapboxgl = (await import('mapbox-gl')).default;
-      const map = mapRef.current!;
+    const mapboxgl = getMapboxGL();
+    if (!mapboxgl) return;
+    const map = mapRef.current;
 
-      // Clear old markers
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
+    // Clear old markers (safety)
+    markersRef.current.forEach((m: any) => m.remove());
+    markersRef.current = [];
 
-      pharmacies.forEach((pharm) => {
-        if (!pharm.latitude || !pharm.longitude) return;
+    // Only use pharmacies that have coordinates
+    const validPharmacies = pharmacies.filter((p) => p.latitude && p.longitude);
 
-        // Create custom marker element
-        const el = document.createElement('div');
-        el.style.cssText = `
-          width: 36px; height: 36px; border-radius: 50%;
-          background: ${pharm.isCheapest ? '#7ED957' : '#1A7A4A'};
-          border: 3px solid #FFFFFF;
-          cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          transition: transform 0.2s;
-        `;
-        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${pharm.isCheapest ? '#0F1F17' : '#FFFFFF'}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
-        el.onmouseenter = () => {
-          el.style.transform = 'scale(1.2)';
-        };
-        el.onmouseleave = () => {
-          el.style.transform = 'scale(1)';
-        };
+    validPharmacies.forEach((pharm) => {
+      const el = document.createElement('div');
+      el.style.cssText = `
+        width: 32px; height: 32px; border-radius: 50%;
+        background: ${pharm.isCheapest ? '#7ED957' : '#1A7A4A'};
+        border: 2px solid #FFFFFF;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      `;
+      el.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${pharm.isCheapest ? '#0F1F17' : '#FFFFFF'}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
 
-        const marker = new mapboxgl.Marker({ element: el })
-          .setLngLat([pharm.longitude, pharm.latitude])
-          .addTo(map);
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([pharm.longitude, pharm.latitude])
+        .addTo(map);
 
-        el.addEventListener('click', () => {
-          setSelectedPharmacy(pharm);
-          map.flyTo({
-            center: [pharm.longitude, pharm.latitude],
-            zoom: 15,
-            duration: 800,
-          });
+      el.addEventListener('click', () => {
+        setSelectedPharmacy(pharm);
+        map.flyTo({
+          center: [pharm.longitude, pharm.latitude],
+          zoom: 16,
+          duration: 800,
         });
-
-        markersRef.current.push(marker);
       });
 
-      // Fit bounds to show all pharmacies
-      if (pharmacies.length > 1) {
-        const bounds = new mapboxgl.LngLatBounds();
-        pharmacies.forEach((p) => {
-          if (p.latitude && p.longitude) bounds.extend([p.longitude, p.latitude]);
-        });
-        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 1000 });
+      markersRef.current.push(marker);
+    });
+
+    // Fit bounds only to Santiago-area pharmacies (not the whole country)
+    if (validPharmacies.length > 1) {
+      const bounds = new mapboxgl.LngLatBounds();
+      validPharmacies.forEach((p) => {
+        bounds.extend([p.longitude, p.latitude]);
+      });
+
+      // Only fitBounds if the area is reasonable (not spanning the whole island)
+      const ne = bounds.getNorthEast();
+      const sw = bounds.getSouthWest();
+      const lngSpan = Math.abs(ne.lng - sw.lng);
+      const latSpan = Math.abs(ne.lat - sw.lat);
+
+      if (lngSpan < 0.5 && latSpan < 0.5) {
+        // Small area — fit to show all markers
+        map.fitBounds(bounds, { padding: 50, maxZoom: 15, duration: 1000 });
+      } else {
+        // Large area — just center on Santiago with default zoom
+        map.flyTo({ center: SANTIAGO_CENTER, zoom: DEFAULT_ZOOM, duration: 1000 });
       }
-    })();
+    }
   }, [mapReady, pharmacies]);
 
   const closeCard = useCallback(() => setSelectedPharmacy(null), []);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color="#7ED957" />
-        <Text style={styles.loadingText}>Cargando farmacias...</Text>
-      </View>
-    );
-  }
+  const openGoogleMaps = useCallback((pharm: PharmacyView) => {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${pharm.latitude},${pharm.longitude}&travelmode=driving`;
+    if (Platform.OS === 'web') {
+      window.open(url, '_blank');
+    } else {
+      Linking.openURL(url);
+    }
+  }, []);
+
+  const openWaze = useCallback((pharm: PharmacyView) => {
+    const url = `https://waze.com/ul?ll=${pharm.latitude},${pharm.longitude}&navigate=yes`;
+    if (Platform.OS === 'web') {
+      window.open(url, '_blank');
+    } else {
+      Linking.openURL(url);
+    }
+  }, []);
+
+  const flyToPharmacy = useCallback((pharm: PharmacyView) => {
+    setSelectedPharmacy(pharm);
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: [pharm.longitude, pharm.latitude],
+        zoom: 16,
+        duration: 800,
+      });
+    }
+  }, []);
 
   // Fallback for non-web or missing token
   if (Platform.OS !== 'web' || !MAPBOX_TOKEN) {
@@ -209,16 +231,19 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Mapbox container */}
+      {/* Mapbox container — ALWAYS rendered so the ref is stable */}
       <View style={styles.mapWrapper}>
         <div
           ref={mapContainerRef}
           style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
         />
 
-        {!mapReady && (
+        {(!mapReady || loading) && (
           <View style={styles.mapLoading}>
             <ActivityIndicator size="large" color="#7ED957" />
+            <Text style={styles.loadingText}>
+              {loading ? 'Cargando farmacias...' : 'Cargando mapa...'}
+            </Text>
           </View>
         )}
       </View>
@@ -227,7 +252,7 @@ export default function MapScreen() {
       <View style={styles.drawer}>
         <View style={styles.drawerHandle} />
         <Text style={styles.drawerTitle}>
-          {pharmacies.length} farmacias en Santiago
+          {loading ? 'Cargando...' : `${pharmacies.length} farmacias en Santiago`}
         </Text>
         <ScrollView style={styles.drawerList} showsVerticalScrollIndicator={false}>
           {pharmacies.map((pharm) => (
@@ -237,16 +262,7 @@ export default function MapScreen() {
                 styles.pharmCard,
                 selectedPharmacy?.id === pharm.id && styles.pharmCardActive,
               ]}
-              onPress={() => {
-                setSelectedPharmacy(pharm);
-                if (mapRef.current) {
-                  mapRef.current.flyTo({
-                    center: [pharm.longitude, pharm.latitude],
-                    zoom: 15,
-                    duration: 800,
-                  });
-                }
-              }}
+              onPress={() => flyToPharmacy(pharm)}
             >
               <View style={styles.pharmCardLeft}>
                 <View style={[
@@ -306,6 +322,23 @@ export default function MapScreen() {
               </Text>
             </View>
           )}
+
+          <View style={styles.navRow}>
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => openGoogleMaps(selectedPharmacy)}
+            >
+              <Navigation size={14} color="#1A7A4A" />
+              <Text style={styles.navBtnText}>Google Maps</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => openWaze(selectedPharmacy)}
+            >
+              <ExternalLink size={14} color="#1A7A4A" />
+              <Text style={styles.navBtnText}>Waze</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -442,4 +475,26 @@ const styles = StyleSheet.create({
   },
   detailPriceLabel: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#1A7A4A' },
   detailPriceValue: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#1A7A4A' },
+  navRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  navBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F7F2',
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D4E8DA',
+    gap: 6,
+  },
+  navBtnText: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 13,
+    color: '#1A7A4A',
+  },
 });

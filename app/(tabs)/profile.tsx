@@ -52,10 +52,12 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState({ totalReports: 0, verifiedReports: 0, pendingReports: 0 });
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
+      setDataError(null);
       const [r, s, p] = await Promise.all([
         getMyReports(user.id, 20),
         getMyStats(user.id),
@@ -65,7 +67,7 @@ export default function ProfileScreen() {
       setStats(s);
       setPoints(p);
     } catch {
-      // RLS or network error; leave state as default.
+      setDataError('No se pudieron cargar tus datos. Verifica tu conexión.');
     } finally {
       setLoading(false);
     }
@@ -150,6 +152,12 @@ export default function ProfileScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {dataError && (
+          <TouchableOpacity style={styles.errorBanner} onPress={loadData}>
+            <Text style={styles.errorBannerText}>{dataError}</Text>
+            <Text style={styles.errorBannerRetry}>Reintentar</Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Trophy size={24} color="#1A7A4A" />
@@ -366,6 +374,18 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: '#FFFFFF',
   },
+  errorBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    marginHorizontal: 20,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+  },
+  errorBannerText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#D32F2F', flex: 1 },
+  errorBannerRetry: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#D32F2F', marginLeft: 12 },
   content: { flex: 1 },
   statsGrid: {
     flexDirection: 'row',

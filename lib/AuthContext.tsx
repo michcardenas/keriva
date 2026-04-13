@@ -44,9 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
       setSession(newSession);
+
+      if (event === 'TOKEN_REFRESHED') {
+        // Token refreshed successfully — keep going
+      } else if (event === 'SIGNED_OUT') {
+        setPerfil(null);
+        return;
+      }
+
       await loadPerfilFor(newSession?.user.id);
     });
 

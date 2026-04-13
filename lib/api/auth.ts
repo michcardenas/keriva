@@ -9,13 +9,11 @@ export type Perfil = {
   ciudad: string | null;
 };
 
-function getResetRedirectUrl(): string | undefined {
-  // On web we redirect back to our own /auth/reset-password page.
-  // On native, Supabase will open the URL via the deep link defined in app.json.
+function getRedirectUrl(path: string): string | undefined {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return `${window.location.origin}/auth/reset-password`;
+    return `${window.location.origin}${path}`;
   }
-  return 'keriva://auth/reset-password';
+  return `keriva://${path}`;
 }
 
 export type AuthError = { message: string };
@@ -68,6 +66,7 @@ export async function signUpWithEmail(params: {
     password,
     options: {
       data: Object.keys(metadata).length > 0 ? metadata : undefined,
+      emailRedirectTo: getRedirectUrl('/auth/verify'),
     },
   });
   if (error) return { ok: false, error: mapError(error) };
@@ -86,7 +85,7 @@ export async function sendPasswordResetEmail(
 ): Promise<AuthResult<null>> {
   const { error } = await supabase.auth.resetPasswordForEmail(
     email.trim().toLowerCase(),
-    { redirectTo: getResetRedirectUrl() },
+    { redirectTo: getRedirectUrl('/auth/reset-password') },
   );
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, data: null };
