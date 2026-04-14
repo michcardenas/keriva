@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { generateCSV, downloadCSV } from '@/lib/csv';
 import type { FarmaciaConPrecios } from '@/lib/database.types';
 
 export type PharmacyView = {
@@ -141,4 +142,67 @@ export async function toggleFarmaciaActiva(
     .eq('id', id);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+// ── CSV Export / Import ─────────────────────────────────────
+
+const FARMACIA_CSV_HEADERS = ['nombre', 'direccion', 'ciudad', 'telefono', 'horario', 'activa', 'latitud', 'longitud'];
+
+export async function exportFarmaciasCSV(): Promise<void> {
+  const data = await getAllFarmaciasAdmin();
+  const rows = data.map((f) => ({
+    nombre: f.nombre,
+    direccion: f.direccion,
+    ciudad: f.ciudad,
+    telefono: f.telefono ?? '',
+    horario: f.horario ?? '',
+    activa: String(f.activa),
+    latitud: String(f.latitud),
+    longitud: String(f.longitud),
+  }));
+  const csv = generateCSV(FARMACIA_CSV_HEADERS, rows);
+  downloadCSV(csv, `farmacias_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+export async function importFarmaciasCSV(
+  rows: Array<Record<string, string>>,
+): Promise<{ inserted: number; errors: number }> {
+  let inserted = 0;
+  let errors = 0;
+
+  // Batch insert in chunks of 50
+  const chunks: Array<typeof rows> = [];
+  for (let i = 0; i < rows.length; i += 50) {
+    chunks.push(rows.slice(i, i + 50));
+  }
+
+  for (const chunk of chunks) {
+    const mapped = chunk
+      .filter((r) => r.nombre?.trim())
+      .map((r) => ({
+        nombre: r.nombre.trim(),
+        direccion: r.direccion?.trim() ?? '',
+        ciudad: r.ciudad?.trim() ?? '',
+        telefono: r.telefono?.trim() || null,
+        horario: r.horario?.trim() || null,
+        activa: r.activa?.toLowerCase() !== 'false',
+        latitud: parseFloat(r.latitud) || 0,
+        longitud: parseFloat(r.longitud) || 0,
+      }));
+
+    if (mapped.length === 0) continue;
+
+    const { error, data } = await supabase
+      .from('Farmacias')
+      .upsert(mapped, { onConflict: 'nombre' })
+      .select('id');
+
+    if (error) {
+      errors += mapped.length;
+    } else {
+      inserted += data?.length ?? 0;
+    }
+  }
+
+  return { inserted, errors };
 }

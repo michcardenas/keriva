@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { generateCSV, downloadCSV } from '@/lib/csv';
 import type { MedicamentoConPrecios, MedicamentoDetalle } from '@/lib/database.types';
 
 // View model used by the UI. Fields are in English and floats are parsed,
@@ -200,4 +201,71 @@ export async function getMedicationDetail(id: string): Promise<MedicationDetailV
     avgPrice,
     prices,
   };
+}
+
+// ── CSV Export / Import ─────────────────────────────────────
+
+const MED_CSV_HEADERS = ['nombre', 'nombre_generico', 'concentracion', 'presentacion', 'laboratorio', 'categoria', 'precio_referencia_rd'];
+
+export async function exportMedicamentosCSV(): Promise<void> {
+  const { data, error } = await supabase
+    .from('Medicamentos')
+    .select('nombre, nombre_generico, concentracion, presentacion, laboratorio, categoria, precio_referencia_rd')
+    .order('nombre', { ascending: true });
+
+  if (error || !data) return;
+
+  const rows = (data as Array<Record<string, any>>).map((m) => ({
+    nombre: m.nombre ?? '',
+    nombre_generico: m.nombre_generico ?? '',
+    concentracion: m.concentracion ?? '',
+    presentacion: m.presentacion ?? '',
+    laboratorio: m.laboratorio ?? '',
+    categoria: m.categoria ?? '',
+    precio_referencia_rd: m.precio_referencia_rd != null ? String(m.precio_referencia_rd) : '',
+  }));
+
+  const csv = generateCSV(MED_CSV_HEADERS, rows);
+  downloadCSV(csv, `medicamentos_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+export async function importMedicamentosCSV(
+  rows: Array<Record<string, string>>,
+): Promise<{ inserted: number; errors: number }> {
+  let inserted = 0;
+  let errors = 0;
+
+  const chunks: Array<typeof rows> = [];
+  for (let i = 0; i < rows.length; i += 50) {
+    chunks.push(rows.slice(i, i + 50));
+  }
+
+  for (const chunk of chunks) {
+    const mapped = chunk
+      .filter((r) => r.nombre?.trim())
+      .map((r) => ({
+        nombre: r.nombre.trim(),
+        nombre_generico: r.nombre_generico?.trim() || null,
+        concentracion: r.concentracion?.trim() || null,
+        presentacion: r.presentacion?.trim() || null,
+        laboratorio: r.laboratorio?.trim() || null,
+        categoria: r.categoria?.trim() || null,
+        precio_referencia_rd: parseFloat(r.precio_referencia_rd) || null,
+      }));
+
+    if (mapped.length === 0) continue;
+
+    const { error, data } = await supabase
+      .from('Medicamentos')
+      .upsert(mapped, { onConflict: 'nombre' })
+      .select('id');
+
+    if (error) {
+      errors += mapped.length;
+    } else {
+      inserted += data?.length ?? 0;
+    }
+  }
+
+  return { inserted, errors };
 }

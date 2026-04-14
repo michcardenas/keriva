@@ -42,8 +42,15 @@ import {
 import {
   getAllFarmaciasAdmin,
   toggleFarmaciaActiva,
+  exportFarmaciasCSV,
+  importFarmaciasCSV,
   type FarmaciaAdmin,
 } from '@/lib/api/farmacias';
+import {
+  exportMedicamentosCSV,
+  importMedicamentosCSV,
+} from '@/lib/api/medicamentos';
+import { parseCSV } from '@/lib/csv';
 import LanguageSelector from '@/components/LanguageSelector';
 
 function formatDate(iso: string): string {
@@ -68,7 +75,9 @@ export default function ModerationScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes' | 'gestion'>('reportes');
+  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes' | 'gestion' | 'datos'>('reportes');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (rol === 'usuario') {
@@ -138,6 +147,40 @@ export default function ModerationScreen() {
     if (res.ok) {
       setFarmacias((prev) => prev.map((f) => f.id === id ? { ...f, activa } : f));
     }
+  }
+
+  async function handleImportCSV(type: 'farmacias' | 'medicamentos') {
+    if (Platform.OS !== 'web') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = async (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+      setImporting(true);
+      setImportResult(null);
+      try {
+        const text = await file.text();
+        const rows = parseCSV(text);
+        if (rows.length === 0) {
+          setImportResult('El archivo CSV está vacío o tiene formato inválido');
+          setImporting(false);
+          return;
+        }
+        const result = type === 'farmacias'
+          ? await importFarmaciasCSV(rows)
+          : await importMedicamentosCSV(rows);
+        setImportResult(`${result.inserted} registros importados${result.errors > 0 ? `, ${result.errors} con error` : ''}`);
+        if (type === 'farmacias') {
+          const farmData = await getAllFarmaciasAdmin();
+          setFarmacias(farmData);
+        }
+      } catch {
+        setImportResult('Error al procesar el archivo');
+      }
+      setImporting(false);
+    };
+    input.click();
   }
 
   async function handleRechazarSolicitud(id: number) {
@@ -227,7 +270,15 @@ export default function ModerationScreen() {
               onPress={() => setActiveTab('gestion')}
             >
               <Text style={[styles.tabText, activeTab === 'gestion' && styles.tabTextActive]}>
-                Gestión ({farmacias.length})
+                Gestión
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'datos' && styles.tabActive]}
+              onPress={() => setActiveTab('datos')}
+            >
+              <Text style={[styles.tabText, activeTab === 'datos' && styles.tabTextActive]}>
+                Datos
               </Text>
             </TouchableOpacity>
           </View>
@@ -242,6 +293,76 @@ export default function ModerationScreen() {
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator color="#1A7A4A" size="large" />
+          </View>
+        ) : activeTab === 'datos' && isAdmin ? (
+          <View style={{ gap: 16 }}>
+            {importResult && (
+              <View style={[styles.card, { backgroundColor: '#E8F5E9', padding: 14 }]}>
+                <Text style={{ fontFamily: 'DMSans-Bold', fontSize: 14, color: '#1A7A4A' }}>
+                  {importResult}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.card}>
+              <Text style={styles.cardMedName}>Farmacias</Text>
+              <Text style={styles.cardPharm}>{farmacias.length} farmacias registradas</Text>
+              <View style={[styles.actions, { marginTop: 12 }]}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.verifyBtn]}
+                  onPress={exportFarmaciasCSV}
+                >
+                  <Download size={16} color="#FFFFFF" />
+                  <Text style={styles.verifyText}>Exportar CSV</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#0D47A1' }]}
+                  onPress={() => handleImportCSV('farmacias')}
+                  disabled={importing}
+                >
+                  {importing ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Text style={styles.verifyText}>Importar CSV</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.cardDate, { marginTop: 8 }]}>
+                Columnas: nombre, direccion, ciudad, telefono, horario, activa, latitud, longitud
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardMedName}>Medicamentos</Text>
+              <Text style={styles.cardPharm}>Catálogo curado de medicamentos</Text>
+              <View style={[styles.actions, { marginTop: 12 }]}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.verifyBtn]}
+                  onPress={exportMedicamentosCSV}
+                >
+                  <Download size={16} color="#FFFFFF" />
+                  <Text style={styles.verifyText}>Exportar CSV</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#0D47A1' }]}
+                  onPress={() => handleImportCSV('medicamentos')}
+                  disabled={importing}
+                >
+                  {importing ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Text style={styles.verifyText}>Importar CSV</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.cardDate, { marginTop: 8 }]}>
+                Columnas: nombre, nombre_generico, concentracion, presentacion, laboratorio, categoria, precio_referencia_rd
+              </Text>
+            </View>
           </View>
         ) : activeTab === 'gestion' && isAdmin ? (
           <>
