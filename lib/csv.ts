@@ -1,9 +1,12 @@
 // CSV utilities — no external dependencies
+// Uses semicolon (;) as separator for Excel compatibility in Latin America
+
+const SEP = ';';
 
 function escapeCell(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+  if (str.includes(SEP) || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
@@ -13,9 +16,9 @@ export function generateCSV(
   headers: string[],
   rows: Array<Record<string, any>>,
 ): string {
-  const headerLine = headers.map(escapeCell).join(',');
+  const headerLine = headers.map(escapeCell).join(SEP);
   const dataLines = rows.map((row) =>
-    headers.map((h) => escapeCell(row[h])).join(','),
+    headers.map((h) => escapeCell(row[h])).join(SEP),
   );
   return [headerLine, ...dataLines].join('\n');
 }
@@ -34,11 +37,15 @@ export function parseCSV(text: string): Array<Record<string, string>> {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
-  const headers = parseLine(lines[0]);
+  // Auto-detect separator: semicolon or comma
+  const firstLine = lines[0];
+  const sep = firstLine.includes(';') ? ';' : ',';
+
+  const headers = parseLine(lines[0], sep);
   const rows: Array<Record<string, string>> = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = parseLine(lines[i]);
+    const values = parseLine(lines[i], sep);
     if (values.length === 0) continue;
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => {
@@ -50,7 +57,7 @@ export function parseCSV(text: string): Array<Record<string, string>> {
   return rows;
 }
 
-function parseLine(line: string): string[] {
+function parseLine(line: string, sep: string): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -69,7 +76,7 @@ function parseLine(line: string): string[] {
     } else {
       if (ch === '"') {
         inQuotes = true;
-      } else if (ch === ',') {
+      } else if (ch === sep) {
         result.push(current);
         current = '';
       } else {
