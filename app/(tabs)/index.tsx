@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Database, BookOpen } from 'lucide-react-native';
+import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Database, BookOpen, Heart, Pill, Thermometer, Brain, Droplets, Eye, Bone, Shield, Zap, Leaf, Syringe, Baby, Wind, Flame } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -15,7 +15,25 @@ import {
 import LanguageSelector from '@/components/LanguageSelector';
 import LoginNudge from '@/components/LoginNudge';
 
-const CATEGORIES = ['Todo', 'Antidiabético', 'Antihipertensivo', 'Estatina'];
+const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
+  { label: 'Todo', icon: Pill, color: '#1A7A4A' },
+  { label: 'Presión arterial', icon: Heart, color: '#E53935' },
+  { label: 'Analgésico', icon: Zap, color: '#FF6F00' },
+  { label: 'Antibiótico', icon: Shield, color: '#1565C0' },
+  { label: 'Diabetes', icon: Droplets, color: '#6A1B9A' },
+  { label: 'Gastro', icon: Flame, color: '#EF6C00' },
+  { label: 'Vitaminas', icon: Leaf, color: '#2E7D32' },
+  { label: 'Colesterol', icon: Heart, color: '#AD1457' },
+  { label: 'Alérgico', icon: Wind, color: '#00838F' },
+  { label: 'Antiinflamatorio', icon: Thermometer, color: '#D84315' },
+  { label: 'Diurético', icon: Droplets, color: '#0277BD' },
+  { label: 'Respiratorio', icon: Wind, color: '#00695C' },
+  { label: 'Antidepresivo', icon: Brain, color: '#4527A0' },
+  { label: 'Gota', icon: Droplets, color: '#283593' },
+  { label: 'Neurológico', icon: Brain, color: '#1A237E' },
+  { label: 'Tiroides', icon: Syringe, color: '#4E342E' },
+  { label: 'Anticoagulante', icon: Droplets, color: '#B71C1C' },
+];
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -158,29 +176,37 @@ export default function SearchScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Categorías</Text>
-              <View style={styles.categoryGrid}>
-                {CATEGORIES.map((category) => (
-                  <TouchableOpacity
-                    key={category}
-                    style={[
-                      styles.categoryChip,
-                      selectedCategory === category && styles.categoryChipActive,
-                    ]}
-                    onPress={() => setSelectedCategory(category)}
-                  >
-                    <Text
+            <View style={styles.categorySection}>
+              <FlatList
+                data={CATEGORIES}
+                keyExtractor={(item) => item.label}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryList}
+                renderItem={({ item }) => {
+                  const isActive = selectedCategory === item.label;
+                  const Icon = item.icon;
+                  return (
+                    <TouchableOpacity
                       style={[
-                        styles.categoryChipText,
-                        selectedCategory === category && styles.categoryChipTextActive,
+                        styles.categoryChip,
+                        isActive && { backgroundColor: item.color, borderColor: item.color },
                       ]}
+                      onPress={() => setSelectedCategory(item.label)}
                     >
-                      {category}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                      <Icon size={16} color={isActive ? '#FFFFFF' : item.color} />
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          isActive && styles.categoryChipTextActive,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
             </View>
 
             {searching && (
@@ -473,27 +499,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1A7A4A',
   },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  categorySection: {
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  categoryList: {
+    paddingHorizontal: 20,
     gap: 8,
   },
   categoryChip: {
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 24,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  categoryChipActive: {
-    backgroundColor: '#1A7A4A',
-    borderColor: '#1A7A4A',
+    borderWidth: 1.5,
+    borderColor: '#E8E8E8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   categoryChipText: {
     fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#666666',
+    fontSize: 13,
+    color: '#555555',
   },
   categoryChipTextActive: {
     color: '#FFFFFF',
