@@ -304,6 +304,19 @@ export default function ModerationScreen() {
               </View>
             )}
 
+            {/* Instructions */}
+            <View style={[styles.card, { backgroundColor: '#F0F9F4', borderColor: '#C8E6C9', borderWidth: 1 }]}>
+              <Text style={[styles.cardMedName, { marginBottom: 8 }]}>Como importar datos</Text>
+              <Text style={styles.instructionText}>1. Toca "Exportar CSV" para descargar el archivo actual</Text>
+              <Text style={styles.instructionText}>2. Abre el archivo en Excel o Google Sheets</Text>
+              <Text style={styles.instructionText}>3. Agrega, edita o elimina filas (no cambies los nombres de las columnas de la primera fila)</Text>
+              <Text style={styles.instructionText}>4. Guarda como CSV (separado por punto y coma o coma)</Text>
+              <Text style={styles.instructionText}>5. Toca "Importar CSV" y selecciona tu archivo</Text>
+              <Text style={[styles.instructionText, { color: '#1A7A4A', marginTop: 6 }]}>
+                Si un registro ya existe (mismo nombre), se actualiza. Si es nuevo, se crea.
+              </Text>
+            </View>
+
             <View style={styles.card}>
               <Text style={styles.cardMedName}>Farmacias</Text>
               <Text style={styles.cardPharm}>{farmacias.length} farmacias registradas</Text>
@@ -323,14 +336,12 @@ export default function ModerationScreen() {
                   {importing ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <>
-                      <Text style={styles.verifyText}>Importar CSV</Text>
-                    </>
+                    <Text style={styles.verifyText}>Importar CSV</Text>
                   )}
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.cardDate, { marginTop: 8 }]}>
-                Columnas: nombre, direccion, ciudad, telefono, horario, activa, latitud, longitud
+              <Text style={styles.instructionColumns}>
+                Columnas: nombre; direccion; ciudad; telefono; horario; activa; latitud; longitud
               </Text>
             </View>
 
@@ -353,14 +364,12 @@ export default function ModerationScreen() {
                   {importing ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <>
-                      <Text style={styles.verifyText}>Importar CSV</Text>
-                    </>
+                    <Text style={styles.verifyText}>Importar CSV</Text>
                   )}
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.cardDate, { marginTop: 8 }]}>
-                Columnas: nombre, nombre_generico, concentracion, presentacion, laboratorio, categoria, precio_referencia_rd
+              <Text style={styles.instructionColumns}>
+                Columnas: nombre; nombre_generico; concentracion; presentacion; laboratorio; categoria; precio_referencia_rd
               </Text>
             </View>
           </View>
@@ -683,6 +692,13 @@ const styles = StyleSheet.create({
   farmBadgeText: { fontFamily: 'DMSans-Bold', fontSize: 10 },
   farmBadgeTextActive: { color: '#1A7A4A' },
   farmBadgeTextInactive: { color: '#D32F2F' },
+  instructionText: {
+    fontFamily: 'DMSans-Regular', fontSize: 13, color: '#333', lineHeight: 22,
+  },
+  instructionColumns: {
+    fontFamily: 'DMSans-Regular', fontSize: 11, color: '#999', marginTop: 8,
+    backgroundColor: '#F8F9FA', padding: 8, borderRadius: 6,
+  },
   docLink: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(126,217,87,0.1)', paddingHorizontal: 10, paddingVertical: 5,
