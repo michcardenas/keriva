@@ -117,6 +117,26 @@ export async function getMyPoints(userId: string): Promise<number> {
   return rows.reduce((sum, r) => sum + (r.puntos ?? 0), 0);
 }
 
+export type PointTransaction = {
+  id: string;
+  accion: string;
+  puntos: number;
+  descripcion: string;
+  created_at: string;
+};
+
+export async function getMyPointsHistory(
+  userId: string,
+): Promise<PointTransaction[]> {
+  const { data, error } = await supabase
+    .from('Puntos')
+    .select('id, accion, puntos, descripcion, created_at')
+    .eq('usuario_id', userId)
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data as PointTransaction[];
+}
+
 // ---------------------------------------------------------------------
 // Report creation
 // ---------------------------------------------------------------------
@@ -240,4 +260,292 @@ export async function rejectReport(reportId: number): Promise<{ ok: boolean; err
   const { error } = await supabase.from('Precios').delete().eq('id', reportId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+// =====================================================================
+// Adendum v2.1 — Precio Rango + Auditoría (Bloque 3)
+// =====================================================================
+// Todo lo que está arriba es el flujo Fase 2 (reportes con foto).
+// Lo que sigue es el flujo Fase 1 del adendum:
+//   · calcular_rango_precio  → rango ±5% sobre precio_base con descuento
+//   · price_audits           → votos comunitarios ✅/❌
+//   · farmacia_whatsapp      → deeplink wa.me con mensaje pre-llenado
+// =====================================================================
+
+export type PrecioRango = {
+  precioMin: number;
+  precioMax: number;
+  moneda: string;
+};
+
+export type AuditVote = 'correcto' | 'incorrecto';
+
+export type AuditResult =
+  | { ok: true; votoId: string }
+  | { ok: false; error: string; limitReached?: boolean };
+
+export type PrecioHealth = {
+  totalVotos: number;
+  votosOk: number;
+  votosMal: number;
+  pctCorrecto: number | null;
+  estado: 'ok' | 'revisar' | 'problema' | 'pocos_datos' | null;
+};
+
+/**
+ * Rango estimado ±5% para un SKU en una farmacia (adendum §3.3).
+ * Retorna null si no hay precio_base vigente.
+ */
+export async function getPriceRange(
+  skuId: string,
+  farmaciaId: number,
+): Promise<PrecioRango | null> {
+  const { data, error } = await supabase.rpc('calcular_rango_precio', {
+    p_sku_id: skuId,
+    p_farmacia_id: farmaciaId,
+  });
+
+  if (error || !data || !Array.isArray(data) || data.length === 0) return null;
+
+  const row = data[0] as { precio_min: string | number; precio_max: string | number; moneda: string };
+  return {
+    precioMin: Number(row.precio_min),
+    precioMax: Number(row.precio_max),
+    moneda: row.moneda ?? 'DOP',
+  };
+}
+
+/**
+ * ¿Farmacia abierta ahora? (adendum §3.2 — modal fuera de horario).
+ * Optimista: true si no hay datos.
+ */
+export async function isFarmaciaOpenNow(farmaciaId: number): Promise<boolean> {
+  const { data, error } = await supabase.rpc('farmacia_abierta_ahora', {
+    p_farmacia_id: farmaciaId,
+  });
+  if (error || data === null || data === undefined) return true;
+  return Boolean(data);
+}
+
+/**
+ * Inserta voto ✅/❌ de auditoría. El trigger bloquea >3 votos/día por farmacia.
+ */
+export async function createAuditVote(params: {
+  skuId: string;
+  farmaciaId: number;
+  voto: AuditVote;
+  precioVisto?: number;
+}): Promise<AuditResult> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return { ok: false, error: 'Debes iniciar sesión para votar' };
+
+  const { data, error } = await supabase
+    .from('price_audits')
+    .insert({
+      user_id: auth.user.id,
+      sku_id: params.skuId,
+      farmacia_id: params.farmaciaId,
+      voto: params.voto,
+      precio_visto: params.precioVisto ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    if (error.message?.includes('Límite diario')) {
+      return {
+        ok: false,
+        error: 'Ya hiciste 3 votos hoy para esta farmacia. Vuelve mañana.',
+        limitReached: true,
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, votoId: String(data.id) };
+}
+
+/** Votos del usuario actual hoy en esta farmacia (para desactivar botones). */
+export async function getUserAuditCountToday(farmaciaId: number): Promise<number> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return 0;
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const { count } = await supabase
+    .from('price_audits')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', auth.user.id)
+    .eq('farmacia_id', farmaciaId)
+    .gte('created_at', startOfDay.toISOString());
+
+  return count ?? 0;
+}
+
+/** Salud del precio (ratio votos 30d) — usado en panel admin o badge "Precio confiable". */
+export async function getPriceHealth(
+  skuId: string,
+  farmaciaId: number,
+): Promise<PrecioHealth | null> {
+  const { data, error } = await supabase
+    .from('v_precio_health_detalle')
+    .select('total_votos, votos_ok, votos_mal, pct_correcto, estado')
+    .eq('sku_id', skuId)
+    .eq('farmacia_id', farmaciaId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    totalVotos: Number(data.total_votos),
+    votosOk: Number(data.votos_ok),
+    votosMal: Number(data.votos_mal),
+    pctCorrecto: data.pct_correcto === null ? null : Number(data.pct_correcto),
+    estado: data.estado as PrecioHealth['estado'],
+  };
+}
+
+/** Datos de afiliación WhatsApp (null si no afiliada). */
+export async function getFarmaciaWhatsapp(farmaciaId: number): Promise<{
+  numeroWhatsapp: string;
+  horarioApertura: string | null;
+  horarioCierre: string | null;
+  descuentoEstandar: number | null;
+} | null> {
+  const { data, error } = await supabase
+    .from('farmacia_whatsapp')
+    .select('numero_whatsapp, horario_apertura, horario_cierre, descuento_estandar')
+    .eq('farmacia_id', farmaciaId)
+    .eq('afiliada', true)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    numeroWhatsapp: data.numero_whatsapp,
+    horarioApertura: data.horario_apertura,
+    horarioCierre: data.horario_cierre,
+    descuentoEstandar: data.descuento_estandar === null ? null : Number(data.descuento_estandar),
+  };
+}
+
+/** Construye deeplink wa.me con mensaje pre-llenado (adendum §3.2). */
+export function buildWhatsAppLink(
+  numero: string,
+  medicamento: string,
+  precioRango: string,
+): string {
+  const mensaje = encodeURIComponent(
+    `Hola, vi en Keriva que tienen ${medicamento} a un estimado de ${precioRango}. ` +
+      `¿Me confirman su precio exacto y si tienen disponibilidad para hoy?`,
+  );
+  const numeroLimpio = numero.replace(/[^0-9]/g, '');
+  return `https://wa.me/${numeroLimpio}?text=${mensaje}`;
+}
+
+/** Formatea rango para mostrar. Ej: "RD$ 420 – RD$ 480". */
+export function formatPriceRange(rango: PrecioRango): string {
+  const symbol = rango.moneda === 'USD' ? 'US$' : 'RD$';
+  const min = Math.round(rango.precioMin);
+  const max = Math.round(rango.precioMax);
+  return `${symbol} ${min} – ${symbol} ${max}`;
+}
+
+// =====================================================================
+// Helpers de match medicamento → producto + listado de farmacias afiliadas
+// =====================================================================
+
+/**
+ * Intenta matchear un medicamento legado (por nombre/principio activo) contra
+ * la tabla `productos` (SKUs del adendum). Usa trigram similarity si está
+ * disponible; si no, cae a ILIKE.
+ */
+export async function findProductoByMedicamentoName(
+  nombre: string,
+  principioActivo?: string | null,
+): Promise<{ id: string; nombreComercial: string } | null> {
+  const q = nombre.trim();
+  if (!q) return null;
+
+  // Primero match exacto por nombre_comercial
+  const { data: exactMatch } = await supabase
+    .from('productos')
+    .select('id, nombre_comercial')
+    .ilike('nombre_comercial', q)
+    .eq('activo', true)
+    .limit(1)
+    .maybeSingle();
+
+  if (exactMatch) {
+    return { id: exactMatch.id, nombreComercial: exactMatch.nombre_comercial };
+  }
+
+  // Luego por principio_activo si viene
+  if (principioActivo) {
+    const { data: activoMatch } = await supabase
+      .from('productos')
+      .select('id, nombre_comercial')
+      .ilike('principio_activo', principioActivo.trim())
+      .eq('activo', true)
+      .limit(1)
+      .maybeSingle();
+    if (activoMatch) {
+      return { id: activoMatch.id, nombreComercial: activoMatch.nombre_comercial };
+    }
+  }
+
+  // Finalmente fuzzy por nombre_comercial
+  const { data: fuzzyMatch } = await supabase
+    .from('productos')
+    .select('id, nombre_comercial')
+    .ilike('nombre_comercial', `%${q}%`)
+    .eq('activo', true)
+    .limit(1)
+    .maybeSingle();
+
+  if (fuzzyMatch) {
+    return { id: fuzzyMatch.id, nombreComercial: fuzzyMatch.nombre_comercial };
+  }
+
+  return null;
+}
+
+/**
+ * Farmacias afiliadas al sistema WhatsApp (adendum §3.2).
+ * Retorna top N ordenadas por fecha de afiliación más reciente.
+ */
+export async function getAffiliatedPharmacies(limit = 5): Promise<
+  Array<{
+    farmaciaId: number;
+    nombre: string;
+    direccion: string;
+    descuento: number | null;
+  }>
+> {
+  const { data, error } = await supabase
+    .from('v_farmacias_whatsapp')
+    .select('farmacia_id, farmacia_nombre, descuento_estandar')
+    .limit(limit);
+
+  if (error || !data) return [];
+
+  // Completar dirección desde "Farmacias"
+  const ids = data.map((d) => d.farmacia_id);
+  const { data: detalles } = await supabase
+    .from('Farmacias')
+    .select('id, direccion')
+    .in('id', ids);
+
+  const dirMap = new Map<number, string>();
+  (detalles ?? []).forEach((f: { id: number; direccion: string }) => {
+    dirMap.set(f.id, f.direccion);
+  });
+
+  return data.map((d) => ({
+    farmaciaId: d.farmacia_id as number,
+    nombre: (d.farmacia_nombre as string) ?? 'Farmacia',
+    direccion: dirMap.get(d.farmacia_id as number) ?? 'Sin dirección',
+    descuento: d.descuento_estandar === null ? null : Number(d.descuento_estandar),
+  }));
 }

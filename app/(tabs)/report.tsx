@@ -135,7 +135,7 @@ export default function ReportScreen() {
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<CameraIcon size={56} color="#7ED957" />}
+        icon={<CameraIcon size={56} color="#34C26A" />}
         title="Reporta precios y gana puntos"
         description="Crea tu cuenta gratuita para reportar precios de medicamentos y ayudar a la comunidad dominicana a ahorrar."
       />
@@ -145,7 +145,7 @@ export default function ReportScreen() {
   if (success) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#1A7A4A', '#0F1F17']} style={styles.successContainer}>
+        <LinearGradient colors={['#106B4F', '#052419']} style={styles.successContainer}>
           <View style={styles.successIconCircle}>
             <Check size={56} color="#FFFFFF" strokeWidth={3} />
           </View>
@@ -175,7 +175,7 @@ export default function ReportScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#1A7A4A', '#0F1F17']} style={styles.header}>
+      <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
@@ -190,7 +190,7 @@ export default function ReportScreen() {
           onPress={() => setMedModalOpen(true)}
           disabled={submitting}
         >
-          <Pill size={20} color="#1A7A4A" />
+          <Pill size={20} color="#106B4F" />
           <View style={styles.selectorTextBox}>
             {selectedMed ? (
               <>
@@ -212,7 +212,7 @@ export default function ReportScreen() {
           onPress={() => setPharmModalOpen(true)}
           disabled={submitting}
         >
-          <Store size={20} color="#1A7A4A" />
+          <Store size={20} color="#106B4F" />
           <View style={styles.selectorTextBox}>
             {selectedPharm ? (
               <>
@@ -228,7 +228,7 @@ export default function ReportScreen() {
 
         <Text style={styles.label}>Precio en RD$</Text>
         <View style={styles.priceInput}>
-          <DollarSign size={20} color="#1A7A4A" />
+          <DollarSign size={20} color="#106B4F" />
           <TextInput
             style={styles.priceField}
             keyboardType="decimal-pad"
@@ -251,11 +251,11 @@ export default function ReportScreen() {
         ) : (
           <View style={styles.photoActions}>
             <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhoto}>
-              <CameraIcon size={20} color="#1A7A4A" />
+              <CameraIcon size={20} color="#106B4F" />
               <Text style={styles.photoBtnText}>Tomar foto</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.photoBtn} onPress={handlePickImage}>
-              <SearchIcon size={20} color="#1A7A4A" />
+              <SearchIcon size={20} color="#106B4F" />
               <Text style={styles.photoBtnText}>Elegir archivo</Text>
             </TouchableOpacity>
           </View>
@@ -357,7 +357,7 @@ function PickerModal<T>(props: PickerModalProps<T>) {
           <View style={modalStyles.header}>
             <Text style={modalStyles.title}>{props.title}</Text>
             <TouchableOpacity onPress={props.onClose}>
-              <X size={22} color="#0F1F17" />
+              <X size={22} color="#052419" />
             </TouchableOpacity>
           </View>
           <View style={modalStyles.searchBox}>
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: 'DMSans-Bold',
     fontSize: 13,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 8,
     marginTop: 16,
   },
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   selectorValue: {
     fontFamily: 'DMSans-Medium',
     fontSize: 15,
-    color: '#0F1F17',
+    color: '#052419',
   },
   selectorMeta: {
     fontFamily: 'DMSans-Regular',
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: '#0F1F17',
+    color: '#052419',
     paddingVertical: 0,
   },
   photoActions: { flexDirection: 'row', gap: 10 },
@@ -474,9 +474,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#1A7A4A',
+    borderColor: '#106B4F',
   },
-  photoBtnText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#1A7A4A' },
+  photoBtnText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#106B4F' },
   photoPreviewBox: { borderRadius: 12, overflow: 'hidden', position: 'relative' },
   photoPreview: { width: '100%', height: 200, resizeMode: 'cover' },
   photoRemove: {
@@ -504,21 +504,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 20,
   },
-  pointsPreviewLabel: { fontFamily: 'DMSans-Regular', fontSize: 13, color: '#1A7A4A' },
+  pointsPreviewLabel: { fontFamily: 'DMSans-Regular', fontSize: 13, color: '#106B4F' },
   pointsPreviewValue: {
     fontFamily: 'Poppins-Bold',
     fontSize: 26,
-    color: '#1A7A4A',
+    color: '#106B4F',
     marginTop: 2,
   },
   pointsPreviewHint: {
     fontFamily: 'DMSans-Regular',
     fontSize: 11,
-    color: '#1A7A4A',
+    color: '#106B4F',
     marginTop: 2,
   },
   submit: {
-    backgroundColor: '#1A7A4A',
+    backgroundColor: '#106B4F',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#7ED957',
+    backgroundColor: '#34C26A',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -554,8 +554,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
   },
-  successPoints: { fontFamily: 'DMSans-Bold', color: '#7ED957' },
-  bold: { fontFamily: 'DMSans-Bold', color: '#7ED957' },
+  successPoints: { fontFamily: 'DMSans-Bold', color: '#34C26A' },
+  bold: { fontFamily: 'DMSans-Bold', color: '#34C26A' },
   successHint: {
     fontFamily: 'DMSans-Regular',
     fontSize: 13,
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
   successPrimaryText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   successSecondary: {
     borderWidth: 2,
@@ -614,7 +614,7 @@ const modalStyles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#0F1F17' },
+  title: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#052419' },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -630,7 +630,7 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     fontFamily: 'DMSans-Regular',
     fontSize: 14,
-    color: '#0F1F17',
+    color: '#052419',
   },
   item: {
     paddingHorizontal: 20,
@@ -638,7 +638,7 @@ const modalStyles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  itemPrimary: { fontFamily: 'DMSans-Medium', fontSize: 15, color: '#0F1F17' },
+  itemPrimary: { fontFamily: 'DMSans-Medium', fontSize: 15, color: '#052419' },
   itemSecondary: {
     fontFamily: 'DMSans-Regular',
     fontSize: 12,

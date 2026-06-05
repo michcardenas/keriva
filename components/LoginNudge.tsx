@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(126, 217, 87, 0.3)',
+    borderColor: 'rgba(52, 194, 106, 0.3)',
   },
   content: {
     flex: 1,
@@ -108,11 +108,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: 'DMSans-Medium',
     fontSize: 13,
-    color: '#0F1F17',
+    color: '#052419',
     lineHeight: 18,
   },
   cta: {
-    backgroundColor: '#1A7A4A',
+    backgroundColor: '#106B4F',
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,

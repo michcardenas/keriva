@@ -30,36 +30,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+    // Synchronous hydration from localStorage: supabase.auth.getSession()
+    // can hang in some HMR/dev states. The persisted token is the same data
+    // we'd get from getSession(), just read directly. This guarantees the UI
+    // can render protected routes immediately while supabase-js settles.
+    if (typeof window !== 'undefined') {
+      try {
+        const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+        const ref = url.replace(/^https?:\/\//, '').split('.')[0];
+        const raw = window.localStorage.getItem(`sb-${ref}-auth-token`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.access_token && parsed?.user) {
+            setSession(parsed as Session);
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    // Safety timer: flip loading=false within 1s so the UI is never blocked
+    // on auth bootstrap. onAuthStateChange (INITIAL_SESSION) populates the
+    // session asynchronously and updates the UI when it arrives.
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 800);
+
     supabase.auth
       .getSession()
-      .then(async ({ data }) => {
+      .then(({ data }) => {
         if (!mounted) return;
+        clearTimeout(safetyTimer);
         setSession(data.session);
-        await loadPerfilFor(data.session?.user.id);
-        if (!mounted) return;
         setLoading(false);
+        setTimeout(() => {
+          if (!mounted) return;
+          void loadPerfilFor(data.session?.user.id);
+        }, 0);
       })
       .catch(() => {
         if (!mounted) return;
+        clearTimeout(safetyTimer);
         setLoading(false);
       });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    // NOTE: do NOT await supabase queries inside this callback — it blocks
+    // the auth lock in supabase-js v2 and causes signInWithPassword to hang.
+    // We defer the perfil fetch with setTimeout(0) so the callback returns
+    // immediately and the lock is released.
+    // See: https://github.com/supabase/supabase-js/issues/845
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!mounted) return;
       setSession(newSession);
 
-      if (event === 'TOKEN_REFRESHED') {
-        // Token refreshed successfully — keep going
-      } else if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
         setPerfil(null);
         return;
       }
 
-      await loadPerfilFor(newSession?.user.id);
+      setTimeout(() => {
+        if (!mounted) return;
+        void loadPerfilFor(newSession?.user.id);
+      }, 0);
     });
 
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
       sub.subscription.unsubscribe();
     };
   }, [loadPerfilFor]);

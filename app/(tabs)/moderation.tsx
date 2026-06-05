@@ -50,7 +50,7 @@ import {
   exportMedicamentosCSV,
   importMedicamentosCSV,
 } from '@/lib/api/medicamentos';
-import { parseCSV } from '@/lib/csv';
+import { pickAndParseCSV } from '@/lib/csv';
 import LanguageSelector from '@/components/LanguageSelector';
 
 function formatDate(iso: string): string {
@@ -150,37 +150,31 @@ export default function ModerationScreen() {
   }
 
   async function handleImportCSV(type: 'farmacias' | 'medicamentos') {
-    if (Platform.OS !== 'web') return;
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-    input.onchange = async (e: any) => {
-      const file = e.target?.files?.[0];
-      if (!file) return;
-      setImporting(true);
-      setImportResult(null);
-      try {
-        const text = await file.text();
-        const rows = parseCSV(text);
-        if (rows.length === 0) {
-          setImportResult('El archivo CSV está vacío o tiene formato inválido');
-          setImporting(false);
-          return;
-        }
-        const result = type === 'farmacias'
-          ? await importFarmaciasCSV(rows)
-          : await importMedicamentosCSV(rows);
-        setImportResult(`${result.inserted} registros importados${result.errors > 0 ? `, ${result.errors} con error` : ''}`);
-        if (type === 'farmacias') {
-          const farmData = await getAllFarmaciasAdmin();
-          setFarmacias(farmData);
-        }
-      } catch {
-        setImportResult('Error al procesar el archivo');
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const rows = await pickAndParseCSV();
+      if (!rows) {
+        setImporting(false);
+        return; // user cancelled
       }
-      setImporting(false);
-    };
-    input.click();
+      if (rows.length === 0) {
+        setImportResult('El archivo CSV está vacío o tiene formato inválido');
+        setImporting(false);
+        return;
+      }
+      const result = type === 'farmacias'
+        ? await importFarmaciasCSV(rows)
+        : await importMedicamentosCSV(rows);
+      setImportResult(`${result.inserted} registros importados${result.errors > 0 ? `, ${result.errors} con error` : ''}`);
+      if (type === 'farmacias') {
+        const farmData = await getAllFarmaciasAdmin();
+        setFarmacias(farmData);
+      }
+    } catch {
+      setImportResult('Error al procesar el archivo');
+    }
+    setImporting(false);
   }
 
   async function handleRechazarSolicitud(id: number) {
@@ -196,7 +190,7 @@ export default function ModerationScreen() {
   if (rol === 'usuario') {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#1A7A4A', '#0F1F17']} style={styles.header}>
+        <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
           <Text style={styles.headerTitle}>Moderación</Text>
         </LinearGradient>
         <View style={styles.emptyInfo}>
@@ -218,13 +212,13 @@ export default function ModerationScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#1A7A4A', '#0F1F17']} style={styles.header}>
+      <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
         <View style={styles.headerTopRow}>
           <View style={styles.headerBadge}>
             {isAdmin ? (
-              <UserCog size={16} color="#7ED957" />
+              <UserCog size={16} color="#34C26A" />
             ) : (
-              <Store size={16} color="#7ED957" />
+              <Store size={16} color="#34C26A" />
             )}
             <Text style={styles.headerBadgeText}>
               {isAdmin ? 'Administrador' : 'Farmacia'}
@@ -292,13 +286,13 @@ export default function ModerationScreen() {
       >
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color="#1A7A4A" size="large" />
+            <ActivityIndicator color="#106B4F" size="large" />
           </View>
         ) : activeTab === 'datos' && isAdmin ? (
           <View style={{ gap: 16 }}>
             {importResult && (
               <View style={[styles.card, { backgroundColor: '#E8F5E9', padding: 14 }]}>
-                <Text style={{ fontFamily: 'DMSans-Bold', fontSize: 14, color: '#1A7A4A' }}>
+                <Text style={{ fontFamily: 'DMSans-Bold', fontSize: 14, color: '#106B4F' }}>
                   {importResult}
                 </Text>
               </View>
@@ -312,7 +306,7 @@ export default function ModerationScreen() {
               <Text style={styles.instructionText}>3. Agrega, edita o elimina filas (no cambies los nombres de las columnas de la primera fila)</Text>
               <Text style={styles.instructionText}>4. Guarda como CSV (separado por punto y coma o coma)</Text>
               <Text style={styles.instructionText}>5. Toca "Importar CSV" y selecciona tu archivo</Text>
-              <Text style={[styles.instructionText, { color: '#1A7A4A', marginTop: 6 }]}>
+              <Text style={[styles.instructionText, { color: '#106B4F', marginTop: 6 }]}>
                 Si un registro ya existe (mismo nombre), se actualiza. Si es nuevo, se crea.
               </Text>
             </View>
@@ -411,7 +405,7 @@ export default function ModerationScreen() {
                 <View key={f.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View style={[styles.cardIconBox, { backgroundColor: f.activa ? '#E8F5E9' : '#FFEBEE' }]}>
-                      <Store size={20} color={f.activa ? '#1A7A4A' : '#D32F2F'} />
+                      <Store size={20} color={f.activa ? '#106B4F' : '#D32F2F'} />
                     </View>
                     <View style={styles.cardHeaderText}>
                       <Text style={styles.cardMedName}>{f.nombre}</Text>
@@ -494,7 +488,7 @@ export default function ModerationScreen() {
                           else Linking.openURL(s.documentoUrl!);
                         }}
                       >
-                        <Download size={14} color="#7ED957" />
+                        <Download size={14} color="#34C26A" />
                         <Text style={styles.docLinkText}>Ver documento adjunto</Text>
                       </TouchableOpacity>
                     )}
@@ -626,17 +620,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     alignItems: 'center',
-    backgroundColor: 'rgba(126,217,87,0.15)',
+    backgroundColor: 'rgba(52, 194, 106,0.15)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(126,217,87,0.3)',
+    borderColor: 'rgba(52, 194, 106,0.3)',
   },
   headerBadgeText: {
     fontFamily: 'DMSans-Bold',
     fontSize: 12,
-    color: '#7ED957',
+    color: '#34C26A',
   },
   headerTitle: { fontFamily: 'Poppins-Bold', fontSize: 26, color: '#FFFFFF' },
   headerSubtitle: {
@@ -679,18 +673,18 @@ const styles = StyleSheet.create({
   },
   tabActive: { backgroundColor: '#FFFFFF' },
   tabText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  tabTextActive: { color: '#1A7A4A' },
+  tabTextActive: { color: '#106B4F' },
   filterRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 14, height: 44,
     marginBottom: 16, borderWidth: 1, borderColor: '#E0E0E0',
   },
-  filterInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#0F1F17' },
+  filterInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#052419' },
   farmBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
   farmBadgeActive: { backgroundColor: '#E8F5E9' },
   farmBadgeInactive: { backgroundColor: '#FFEBEE' },
   farmBadgeText: { fontFamily: 'DMSans-Bold', fontSize: 10 },
-  farmBadgeTextActive: { color: '#1A7A4A' },
+  farmBadgeTextActive: { color: '#106B4F' },
   farmBadgeTextInactive: { color: '#D32F2F' },
   instructionText: {
     fontFamily: 'DMSans-Regular', fontSize: 13, color: '#333', lineHeight: 22,
@@ -701,10 +695,10 @@ const styles = StyleSheet.create({
   },
   docLink: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(126,217,87,0.1)', paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: 'rgba(52, 194, 106,0.1)', paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 8, alignSelf: 'flex-start', marginTop: 4,
   },
-  docLinkText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#7ED957' },
+  docLinkText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#34C26A' },
   content: { flex: 1 },
   contentInner: { padding: 20, paddingBottom: 40 },
   loadingBox: { padding: 40, alignItems: 'center' },
@@ -718,7 +712,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 16,
-    color: '#0F1F17',
+    color: '#052419',
     textAlign: 'center',
   },
   emptyText: {
@@ -739,7 +733,7 @@ const styles = StyleSheet.create({
   emptyInfoTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
-    color: '#0F1F17',
+    color: '#052419',
     textAlign: 'center',
   },
   emptyInfoText: {
@@ -768,7 +762,7 @@ const styles = StyleSheet.create({
   },
   cardIcon: { fontSize: 20 },
   cardHeaderText: { flex: 1 },
-  cardMedName: { fontFamily: 'DMSans-Bold', fontSize: 15, color: '#0F1F17' },
+  cardMedName: { fontFamily: 'DMSans-Bold', fontSize: 15, color: '#052419' },
   cardPharm: {
     fontFamily: 'DMSans-Regular',
     fontSize: 12,
@@ -784,7 +778,7 @@ const styles = StyleSheet.create({
   cardPrice: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   photo: {
     width: '100%',
@@ -835,6 +829,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#D32F2F',
   },
-  verifyBtn: { backgroundColor: '#1A7A4A' },
+  verifyBtn: { backgroundColor: '#106B4F' },
   verifyText: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#FFFFFF' },
 });

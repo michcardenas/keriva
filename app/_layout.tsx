@@ -15,6 +15,8 @@ import {
   DMSans_500Medium,
   DMSans_700Bold,
 } from '@expo-google-fonts/dm-sans';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -45,12 +47,16 @@ export default function RootLayout() {
   }
 
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <RootNavigator />
-        <StatusBar style="light" />
-      </AuthProvider>
-    </LanguageProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <RootNavigator />
+            <StatusBar style="light" />
+          </AuthProvider>
+        </LanguageProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -83,7 +89,10 @@ function RootNavigator() {
       const isProtectedTab =
         first === '(tabs)' && typeof second === 'string' && PROTECTED_TABS.has(second);
       if (isProtectedTab) {
-        router.replace('/auth/login');
+        // Guests hitting a protected tab go straight to the register form.
+        // The register screen has a link back to /auth/login for users that
+        // already have an account.
+        router.replace('/auth/register');
       }
     } else if (inAuthGroup || onSplash) {
       // Logged in user on auth/splash → send to tabs
@@ -98,6 +107,7 @@ function RootNavigator() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="detail" />
       <Stack.Screen name="registro-farmacia" />
+      <Stack.Screen name="familia" />
       <Stack.Screen name="+not-found" />
     </Stack>
   );

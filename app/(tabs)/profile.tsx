@@ -12,12 +12,20 @@ import {
   Camera as CameraIcon,
   Store,
   UserCog,
+  Users,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
 import { signOut } from '@/lib/api/auth';
-import { getMyReports, getMyStats, getMyPoints, type MyReport } from '@/lib/api/precios';
+import {
+  getMyReports,
+  getMyStats,
+  getMyPoints,
+  getMyPointsHistory,
+  type MyReport,
+  type PointTransaction,
+} from '@/lib/api/precios';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import type { Rol } from '@/lib/api/perfiles';
 import { getMySolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
@@ -30,7 +38,7 @@ const ROL_LABELS: Record<Rol, string> = {
 };
 
 const ROL_COLORS: Record<Rol, { bg: string; text: string }> = {
-  usuario: { bg: '#E8F5E9', text: '#1A7A4A' },
+  usuario: { bg: '#E8F5E9', text: '#106B4F' },
   farmacia: { bg: '#FFF3E0', text: '#E65100' },
   admin: { bg: '#E3F2FD', text: '#0D47A1' },
 };
@@ -52,6 +60,7 @@ export default function ProfileScreen() {
   const [reports, setReports] = useState<MyReport[]>([]);
   const [stats, setStats] = useState({ totalReports: 0, verifiedReports: 0, pendingReports: 0 });
   const [points, setPoints] = useState(0);
+  const [pointsHistory, setPointsHistory] = useState<PointTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [solicitud, setSolicitud] = useState<SolicitudFarmacia | null>(null);
@@ -60,15 +69,17 @@ export default function ProfileScreen() {
     if (!user) return;
     try {
       setDataError(null);
-      const [r, s, p, sol] = await Promise.all([
+      const [r, s, p, ph, sol] = await Promise.all([
         getMyReports(user.id, 20),
         getMyStats(user.id),
         getMyPoints(user.id),
+        getMyPointsHistory(user.id),
         getMySolicitud(user.id),
       ]);
       setReports(r);
       setStats(s);
       setPoints(p);
+      setPointsHistory(ph);
       setSolicitud(sol);
     } catch {
       setDataError('No se pudieron cargar tus datos. Verifica tu conexión.');
@@ -94,7 +105,7 @@ export default function ProfileScreen() {
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Award size={56} color="#7ED957" />}
+        icon={<Award size={56} color="#34C26A" />}
         title="Tu perfil de contribuidor"
         description="Inicia sesión para ver tus reportes, puntos acumulados y logros. Cada reporte que hagas ayuda a la comunidad."
       />
@@ -117,7 +128,7 @@ export default function ProfileScreen() {
       </TouchableOpacity>
 
       <LinearGradient
-        colors={['#1A7A4A', '#0F1F17']}
+        colors={['#106B4F', '#052419']}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -146,7 +157,7 @@ export default function ProfileScreen() {
 
         <View style={styles.pointsCard}>
           <View style={styles.pointsLeft}>
-            <Award size={32} color="#7ED957" />
+            <Award size={32} color="#34C26A" />
           </View>
           <View style={styles.pointsRight}>
             <Text style={styles.pointsLabel}>Puntos totales</Text>
@@ -170,7 +181,7 @@ export default function ProfileScreen() {
               style={styles.farmaciaCta}
               onPress={() => router.push('/registro-farmacia')}
             >
-              <Store size={22} color="#1A7A4A" />
+              <Store size={22} color="#106B4F" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.farmaciaCtaTitle}>¿Tienes una farmacia?</Text>
                 <Text style={styles.farmaciaCtaText}>Regístrala en Keriva y gestiona tus precios</Text>
@@ -205,29 +216,88 @@ export default function ProfileScreen() {
           ) : null
         )}
 
+        {/* Mi familia (Multi-Perfil) */}
+        <TouchableOpacity
+          style={styles.familiaCta}
+          onPress={() => router.push('/familia' as any)}
+        >
+          <View style={styles.familiaCtaIcon}>
+            <Users size={22} color="#106B4F" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.familiaCtaTitle}>Mi familia</Text>
+            <Text style={styles.familiaCtaText}>
+              Titular + hasta 4 dependientes (hijos, adultos mayores)
+            </Text>
+          </View>
+          <Text style={styles.familiaCtaArrow}>→</Text>
+        </TouchableOpacity>
+
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Trophy size={24} color="#1A7A4A" />
+            <Trophy size={24} color="#106B4F" />
             <Text style={styles.statValue}>{stats.totalReports}</Text>
             <Text style={styles.statLabel}>Reportes</Text>
           </View>
           <View style={styles.statCard}>
-            <ShieldCheck size={24} color="#1A7A4A" />
+            <ShieldCheck size={24} color="#106B4F" />
             <Text style={styles.statValue}>{stats.verifiedReports}</Text>
             <Text style={styles.statLabel}>Verificados</Text>
           </View>
           <View style={styles.statCard}>
-            <Clock size={24} color="#1A7A4A" />
+            <Clock size={24} color="#106B4F" />
             <Text style={styles.statValue}>{stats.pendingReports}</Text>
             <Text style={styles.statLabel}>Pendientes</Text>
           </View>
+        </View>
+
+        {/* Points history */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Historial de puntos</Text>
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color="#106B4F" />
+            </View>
+          ) : pointsHistory.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyEmoji}>⭐</Text>
+              <Text style={styles.emptyTitle}>Sin puntos aún</Text>
+              <Text style={styles.emptyText}>
+                Reporta precios para empezar a ganar puntos.
+              </Text>
+            </View>
+          ) : (
+            pointsHistory.map((tx, idx) => (
+              <View key={tx.id ?? idx} style={styles.pointTxCard}>
+                <View style={styles.pointTxLeft}>
+                  <View
+                    style={[
+                      styles.pointTxIconBox,
+                      tx.accion === 'reporte_verificado' && styles.pointTxIconBoxVerified,
+                    ]}
+                  >
+                    {tx.accion === 'reporte_verificado' ? (
+                      <ShieldCheck size={18} color="#106B4F" />
+                    ) : (
+                      <CameraIcon size={18} color="#34C26A" />
+                    )}
+                  </View>
+                  <View style={styles.pointTxInfo}>
+                    <Text style={styles.pointTxDesc}>{tx.descripcion}</Text>
+                    <Text style={styles.pointTxDate}>{formatDate(tx.created_at)}</Text>
+                  </View>
+                </View>
+                <Text style={styles.pointTxAmount}>+{tx.puntos}</Text>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Historial de contribuciones</Text>
           {loading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color="#1A7A4A" />
+              <ActivityIndicator color="#106B4F" />
             </View>
           ) : reports.length === 0 ? (
             <View style={styles.emptyBox}>
@@ -279,7 +349,7 @@ export default function ProfileScreen() {
                     ]}
                   >
                     {r.status === 'verificado' ? (
-                      <ShieldCheck size={12} color="#1A7A4A" />
+                      <ShieldCheck size={12} color="#106B4F" />
                     ) : (
                       <Clock size={12} color="#E65100" />
                     )}
@@ -350,11 +420,11 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(126,217,87,0.2)',
+    backgroundColor: 'rgba(52, 194, 106,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#7ED957',
+    borderColor: '#34C26A',
   },
   avatarText: { fontSize: 28 },
   headerActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
@@ -394,19 +464,19 @@ const styles = StyleSheet.create({
   pointsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(126,217,87,0.15)',
+    backgroundColor: 'rgba(52, 194, 106,0.15)',
     borderRadius: 16,
     padding: 16,
     gap: 16,
     marginTop: 20,
     borderWidth: 1,
-    borderColor: 'rgba(126,217,87,0.3)',
+    borderColor: 'rgba(52, 194, 106,0.3)',
   },
   pointsLeft: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(126,217,87,0.2)',
+    backgroundColor: 'rgba(52, 194, 106,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -438,9 +508,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9', marginHorizontal: 20, marginTop: 12,
     padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#C8E6C9',
   },
-  farmaciaCtaTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#1A7A4A' },
+  farmaciaCtaTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#106B4F' },
   farmaciaCtaText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
-  farmaciaCtaArrow: { fontFamily: 'Poppins-Bold', fontSize: 20, color: '#1A7A4A' },
+  farmaciaCtaArrow: { fontFamily: 'Poppins-Bold', fontSize: 20, color: '#106B4F' },
+  familiaCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFFFFF', marginHorizontal: 20, marginTop: 12,
+    padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#E0E0E0',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  familiaCtaIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  familiaCtaTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#106B4F' },
+  familiaCtaText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
+  familiaCtaArrow: { fontFamily: 'Poppins-Bold', fontSize: 20, color: '#106B4F' },
   farmaciaStatusPending: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#FFF3E0', marginHorizontal: 20, marginTop: 12,
@@ -450,7 +535,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFEBEE', marginHorizontal: 20, marginTop: 12,
     padding: 14, borderRadius: 12,
   },
-  farmaciaStatusTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#0F1F17' },
+  farmaciaStatusTitle: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#052419' },
   farmaciaStatusText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#666', marginTop: 2 },
   content: { flex: 1 },
   statsGrid: {
@@ -471,7 +556,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: '#0F1F17',
+    color: '#052419',
   },
   statLabel: {
     fontFamily: 'DMSans-Regular',
@@ -482,7 +567,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 16,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 12,
   },
   loadingBox: { padding: 40, alignItems: 'center' },
@@ -497,7 +582,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 16,
-    color: '#0F1F17',
+    color: '#052419',
   },
   emptyText: {
     fontFamily: 'DMSans-Regular',
@@ -508,7 +593,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyCta: {
-    backgroundColor: '#1A7A4A',
+    backgroundColor: '#106B4F',
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -543,7 +628,7 @@ const styles = StyleSheet.create({
   reportName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 14,
-    color: '#0F1F17',
+    color: '#052419',
   },
   reportPharmacy: {
     fontFamily: 'DMSans-Regular',
@@ -584,7 +669,7 @@ const styles = StyleSheet.create({
   reportPrice: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   statusBadge: {
     flexDirection: 'row',
@@ -600,7 +685,7 @@ const styles = StyleSheet.create({
     fontFamily: 'DMSans-Bold',
     fontSize: 10,
   },
-  statusTextVerified: { color: '#1A7A4A' },
+  statusTextVerified: { color: '#106B4F' },
   statusTextPending: { color: '#E65100' },
   roleBanner: {
     flexDirection: 'row',
@@ -635,6 +720,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#E65100',
     lineHeight: 18,
+  },
+  pointTxCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  pointTxLeft: { flexDirection: 'row', gap: 12, flex: 1, alignItems: 'center' },
+  pointTxIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(52, 194, 106,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pointTxIconBoxVerified: {
+    backgroundColor: '#E8F5E9',
+  },
+  pointTxInfo: { flex: 1 },
+  pointTxDesc: {
+    fontFamily: 'DMSans-Medium',
+    fontSize: 14,
+    color: '#052419',
+  },
+  pointTxDate: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 11,
+    color: '#999999',
+    marginTop: 3,
+  },
+  pointTxAmount: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 18,
+    color: '#106B4F',
+    marginLeft: 12,
   },
   footerSpace: { height: 40 },
 });

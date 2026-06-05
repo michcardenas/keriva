@@ -1,9 +1,16 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, MapPin, Navigation } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Navigation, ExternalLink } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { getMedicationDetail, type MedicationDetailView } from '@/lib/api/medicamentos';
+import {
+  findProductoByMedicamentoName,
+  getAffiliatedPharmacies,
+} from '@/lib/api/precios';
+import KerivaLoader from '@/components/KerivaLoader';
+import PriceRangeCard from '@/components/PriceRangeCard';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -15,11 +22,23 @@ const AVAILABILITY_DAYS = [
   { day: 'D', available: false },
 ];
 
+type AffiliatedPharmacy = {
+  farmaciaId: number;
+  nombre: string;
+  direccion: string;
+  descuento: number | null;
+};
+
 export default function DetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const [medication, setMedication] = useState<MedicationDetailView | null>(null);
   const [loading, setLoading] = useState(true);
+  // Adendum v2.1 — producto matcheado y farmacias afiliadas
+  const [skuId, setSkuId] = useState<string | null>(null);
+  const [nombreComercial, setNombreComercial] = useState<string | null>(null);
+  const [affiliated, setAffiliated] = useState<AffiliatedPharmacy[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +51,19 @@ export default function DetailScreen() {
         }
         const data = await getMedicationDetail(medicationId);
         if (!cancelled) setMedication(data);
+
+        if (data) {
+          // Intenta matchear el medicamento a un producto del adendum
+          const producto = await findProductoByMedicamentoName(data.name, data.genericName);
+          if (!cancelled && producto) {
+            setSkuId(producto.id);
+            setNombreComercial(producto.nombreComercial);
+          }
+
+          // Farmacias afiliadas (max 5) para mostrar rangos
+          const afiliadas = await getAffiliatedPharmacies(5);
+          if (!cancelled) setAffiliated(afiliadas);
+        }
       } catch {
         if (!cancelled) setMedication(null);
       } finally {
@@ -44,11 +76,7 @@ export default function DetailScreen() {
   }, [params.id]);
 
   if (loading) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#1A7A4A" />
-      </View>
-    );
+    return <KerivaLoader label="Cargando detalle…" />;
   }
 
   if (!medication) {
@@ -72,7 +100,7 @@ export default function DetailScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#1A7A4A', '#0F1F17']}
+        colors={['#106B4F', '#052419']}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -87,7 +115,62 @@ export default function DetailScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {cheapestPharmacy && (
+        {/* Adendum v2.1 §3.3 — Rango estimado + auditoría comunitaria */}
+        {skuId && affiliated.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Precio estimado en farmacias afiliadas</Text>
+            {affiliated.map((f) => (
+              <View key={f.farmaciaId} style={styles.pharmacyBlock}>
+                <View style={styles.pharmacyBlockHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pharmacyBlockName}>{f.nombre}</Text>
+                    <View style={styles.locationRow}>
+                      <MapPin size={12} color="#666" />
+                      <Text style={styles.pharmacyBlockAddr} numberOfLines={1}>
+                        {f.direccion}
+                      </Text>
+                    </View>
+                  </View>
+                  {f.descuento !== null && f.descuento > 0 && (
+                    <View style={styles.descuentoBadge}>
+                      <Text style={styles.descuentoText}>-{Math.round(f.descuento)}%</Text>
+                    </View>
+                  )}
+                </View>
+                <PriceRangeCard
+                  skuId={skuId}
+                  farmaciaId={f.farmaciaId}
+                  medicamentoNombre={nombreComercial ?? medication.name}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Estado: no hay producto matcheado todavía */}
+        {!skuId && (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerTitle}>Precio de referencia próximamente</Text>
+            <Text style={styles.infoBannerText}>
+              Estamos calibrando el precio de este medicamento. Mientras tanto, consulta
+              directamente con las farmacias.
+            </Text>
+          </View>
+        )}
+
+        {/* Estado: producto matcheado pero sin farmacias afiliadas */}
+        {skuId && affiliated.length === 0 && (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerTitle}>Sin farmacias afiliadas aún</Text>
+            <Text style={styles.infoBannerText}>
+              Pronto tendremos farmacias afiliadas con precios estimados y reserva por WhatsApp.
+            </Text>
+          </View>
+        )}
+
+        {/* Legado: card compacto del mejor precio reportado (se mantiene como referencia
+            histórica hasta que se depreque el flujo viejo en Fase 2). */}
+        {!skuId && cheapestPharmacy && (
           <View style={styles.pharmacyCard}>
             <View style={styles.pharmacyHeader}>
               <View>
@@ -100,7 +183,7 @@ export default function DetailScreen() {
             </View>
 
             <View style={styles.priceContainer}>
-              <Text style={styles.priceLabel}>Mejor precio</Text>
+              <Text style={styles.priceLabel}>Mejor precio reportado</Text>
               <Text style={styles.price}>RD${minPrice.toFixed(2)}</Text>
             </View>
 
@@ -183,11 +266,43 @@ export default function DetailScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.directionsButton}>
-          <Navigation size={20} color="#FFFFFF" />
-          <Text style={styles.directionsButtonText}>Cómo llegar</Text>
-        </TouchableOpacity>
+      <View style={[styles.footer, { paddingBottom: 20 + insets.bottom }]}>
+        <View style={styles.directionsRow}>
+          <TouchableOpacity
+            style={styles.directionsButton}
+            onPress={() => {
+              const lat = medication.prices[0]?.latitude;
+              const lng = medication.prices[0]?.longitude;
+              if (!lat || !lng) return;
+              const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+              if (Platform.OS === 'web') {
+                window.open(url, '_blank');
+              } else {
+                Linking.openURL(url);
+              }
+            }}
+          >
+            <Navigation size={18} color="#FFFFFF" />
+            <Text style={styles.directionsButtonText}>Google Maps</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.wazeButton}
+            onPress={() => {
+              const lat = medication.prices[0]?.latitude;
+              const lng = medication.prices[0]?.longitude;
+              if (!lat || !lng) return;
+              const url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+              if (Platform.OS === 'web') {
+                window.open(url, '_blank');
+              } else {
+                Linking.openURL(url);
+              }
+            }}
+          >
+            <ExternalLink size={18} color="#106B4F" />
+            <Text style={styles.wazeButtonText}>Waze</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -243,7 +358,7 @@ const styles = StyleSheet.create({
   pharmacyName: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 4,
   },
   locationRow: {
@@ -272,7 +387,7 @@ const styles = StyleSheet.create({
   price: {
     fontFamily: 'Poppins-Bold',
     fontSize: 42,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   savingsBadge: {
     backgroundColor: '#FFF3E0',
@@ -320,8 +435,62 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 16,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 12,
+  },
+  pharmacyBlock: {
+    marginBottom: 4,
+  },
+  pharmacyBlockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  pharmacyBlockName: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 14,
+    color: '#052419',
+  },
+  pharmacyBlockAddr: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 12,
+    color: '#666',
+    flex: 1,
+  },
+  descuentoBadge: {
+    backgroundColor: '#34C26A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  descuentoText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 11,
+    color: '#FFFFFF',
+  },
+  infoBanner: {
+    backgroundColor: 'rgba(52, 194, 106, 0.08)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#34C26A',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 14,
+    borderRadius: 8,
+  },
+  infoBannerTitle: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 14,
+    color: '#106B4F',
+    marginBottom: 4,
+  },
+  infoBannerText: {
+    fontFamily: 'DMSans-Regular',
+    fontSize: 13,
+    color: '#052419',
+    lineHeight: 18,
   },
   genericCard: {
     backgroundColor: '#FFFFFF',
@@ -331,7 +500,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#7ED957',
+    borderColor: '#34C26A',
   },
   genericLeft: {
     flex: 1,
@@ -339,7 +508,7 @@ const styles = StyleSheet.create({
   genericBadge: {
     fontFamily: 'DMSans-Bold',
     fontSize: 10,
-    color: '#1A7A4A',
+    color: '#106B4F',
     backgroundColor: '#E8F5E9',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -350,12 +519,12 @@ const styles = StyleSheet.create({
   genericName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 14,
-    color: '#0F1F17',
+    color: '#052419',
   },
   genericPrice: {
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   availabilityGrid: {
     flexDirection: 'row',
@@ -371,7 +540,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   availabilityDayActive: {
-    backgroundColor: '#7ED957',
+    backgroundColor: '#34C26A',
   },
   availabilityDayText: {
     fontFamily: 'DMSans-Bold',
@@ -379,7 +548,7 @@ const styles = StyleSheet.create({
     color: '#999999',
   },
   availabilityDayTextActive: {
-    color: '#0F1F17',
+    color: '#052419',
   },
   availabilityNote: {
     fontFamily: 'DMSans-Regular',
@@ -398,10 +567,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
   },
+  directionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   directionsButton: {
-    backgroundColor: '#1A7A4A',
+    flex: 1,
+    backgroundColor: '#106B4F',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -409,8 +583,25 @@ const styles = StyleSheet.create({
   },
   directionsButtonText: {
     fontFamily: 'Poppins-Bold',
-    fontSize: 16,
+    fontSize: 14,
     color: '#FFFFFF',
+  },
+  wazeButton: {
+    flex: 1,
+    backgroundColor: '#F0F7F2',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#D4E8DA',
+  },
+  wazeButtonText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 14,
+    color: '#106B4F',
   },
   loadingContainer: {
     justifyContent: 'center',
@@ -419,11 +610,11 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 16,
   },
   backButtonEmpty: {
-    backgroundColor: '#1A7A4A',
+    backgroundColor: '#106B4F',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
@@ -451,7 +642,7 @@ const styles = StyleSheet.create({
   otherPharmacyName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 15,
-    color: '#0F1F17',
+    color: '#052419',
     marginBottom: 4,
   },
   otherPharmacyAddress: {
@@ -462,6 +653,6 @@ const styles = StyleSheet.create({
   otherPharmacyPrice: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
 });

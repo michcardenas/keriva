@@ -83,7 +83,7 @@ export default function ResetPasswordScreen() {
   const showWaiting = !sessionReady && !error && !done;
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -102,7 +102,7 @@ export default function ResetPasswordScreen() {
 
           {showWaiting && (
             <View style={styles.waitingBox}>
-              <ActivityIndicator size="large" color="#7ED957" />
+              <ActivityIndicator size="large" color="#34C26A" />
               <Text style={styles.waitingText}>Validando tu enlace de recuperación...</Text>
             </View>
           )}
@@ -170,7 +170,7 @@ export default function ResetPasswordScreen() {
                     disabled={loading}
                   >
                     {loading ? (
-                      <ActivityIndicator color="#1A7A4A" />
+                      <ActivityIndicator color="#106B4F" />
                     ) : (
                       <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
                     )}
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   successBox: { alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   successEmoji: { fontSize: 64 },

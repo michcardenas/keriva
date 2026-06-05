@@ -39,7 +39,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -100,7 +100,7 @@ export default function ForgotPasswordScreen() {
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#1A7A4A" />
+                  <ActivityIndicator color="#106B4F" />
                 ) : (
                   <Text style={styles.primaryButtonText}>Enviar enlace</Text>
                 )}
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   linkButton: { alignItems: 'center', paddingVertical: 12 },
   linkText: {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
   linkTextBold: {
     fontFamily: 'DMSans-Bold',
-    color: '#7ED957',
+    color: '#34C26A',
   },
   successBox: {
     alignItems: 'center',
@@ -212,6 +212,6 @@ const styles = StyleSheet.create({
   },
   emailBold: {
     fontFamily: 'DMSans-Bold',
-    color: '#7ED957',
+    color: '#34C26A',
   },
 });

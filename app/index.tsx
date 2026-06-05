@@ -1,7 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Search } from 'lucide-react-native';
 import { useLanguage } from '@/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
 
@@ -11,7 +10,7 @@ export default function SplashScreen() {
 
   return (
     <LinearGradient
-      colors={['#0F1F17', '#1A7A4A', '#0F1F17']}
+      colors={['#052419', '#106B4F', '#052419']}
       style={styles.container}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
@@ -22,14 +21,11 @@ export default function SplashScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Search color="#7ED957" size={72} strokeWidth={3} />
-            <View style={styles.pillIconContainer}>
-              <View style={styles.pillHalf} />
-              <View style={[styles.pillHalf, styles.pillHalfWhite]} />
-            </View>
-          </View>
-          <Text style={styles.logoText}>keriva</Text>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.tagline}>
             {t.splash.tagline}
           </Text>
@@ -92,42 +88,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoIcon: {
-    position: 'relative',
-    width: 160,
-    height: 160,
-    backgroundColor: 'rgba(126, 217, 87, 0.1)',
-    borderRadius: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  pillIconContainer: {
-    position: 'absolute',
-    width: 32,
-    height: 16,
-    flexDirection: 'row',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  pillHalf: {
-    width: 16,
-    height: 16,
-    backgroundColor: '#7ED957',
-  },
-  pillHalfWhite: {
-    backgroundColor: '#FFFFFF',
-  },
-  logoText: {
-    fontFamily: 'Poppins-Black',
-    fontSize: 72,
-    color: '#FFFFFF',
-    letterSpacing: -2,
+  logoImage: {
+    width: 200,
+    height: 200,
+    marginBottom: 16,
   },
   tagline: {
     fontFamily: 'DMSans-Medium',
     fontSize: 22,
-    color: '#7ED957',
+    color: '#34C26A',
     textAlign: 'center',
     marginTop: 12,
     lineHeight: 32,
@@ -141,22 +110,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(126, 217, 87, 0.1)',
+    backgroundColor: 'rgba(52, 194, 106, 0.1)',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(126, 217, 87, 0.3)',
+    borderColor: 'rgba(52, 194, 106, 0.3)',
   },
   featureCheckmark: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#7ED957',
+    backgroundColor: '#34C26A',
     justifyContent: 'center',
     alignItems: 'center',
   },
   featureCheckmarkText: {
-    color: '#0F1F17',
+    color: '#052419',
     fontSize: 14,
     fontFamily: 'DMSans-Bold',
   },
@@ -180,7 +149,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   secondaryButton: {
     backgroundColor: 'transparent',

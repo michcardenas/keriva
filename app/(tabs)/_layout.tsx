@@ -1,13 +1,17 @@
 import { Tabs } from 'expo-router';
 import { Search, Map, Camera, User, ShieldCheck } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useAuth } from '@/lib/AuthContext';
+import { featureFlags } from '@/lib/feature-flags';
 
 export default function TabLayout() {
   const { t } = useLanguage();
-  const { perfil } = useAuth();
+  const { perfil, session } = useAuth();
+  const insets = useSafeAreaInsets();
   const rol = perfil?.rol ?? 'usuario';
   const showModeration = rol === 'admin' || rol === 'farmacia';
+  const isGuest = !session;
 
   const moderationLabel = rol === 'admin' ? 'Moderar' : 'Mi farmacia';
 
@@ -16,14 +20,14 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0F1F17',
-          borderTopColor: 'rgba(126, 217, 87, 0.2)',
+          backgroundColor: '#052419',
+          borderTopColor: 'rgba(52, 194, 106, 0.2)',
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 60 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
           paddingTop: 8,
         },
-        tabBarActiveTintColor: '#7ED957',
+        tabBarActiveTintColor: '#34C26A',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.5)',
         tabBarLabelStyle: {
           fontFamily: 'DMSans-Medium',
@@ -50,6 +54,13 @@ export default function TabLayout() {
         options={{
           title: t.tabs.report,
           tabBarIcon: ({ size, color }) => <Camera size={size} color={color} />,
+          // Hide if feature flag off OR guest. El flujo de reporte directo de
+          // precio se desactiva en Fase 1 (adendum v2.1 §3.3) — los usuarios
+          // ahora auditan precios con votos ✅/❌ en PriceRangeCard.
+          href:
+            featureFlags.reportTabEnabled && !isGuest
+              ? '/(tabs)/report'
+              : null,
         }}
       />
       <Tabs.Screen
@@ -67,6 +78,8 @@ export default function TabLayout() {
         options={{
           title: t.tabs.profile,
           tabBarIcon: ({ size, color }) => <User size={size} color={color} />,
+          // Hide this tab for guests — same rationale as the report tab.
+          href: isGuest ? null : '/(tabs)/profile',
         }}
       />
     </Tabs>

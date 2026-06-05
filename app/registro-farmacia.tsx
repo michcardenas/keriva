@@ -142,7 +142,7 @@ export default function RegistroFarmaciaScreen() {
         if (markerRef.current) markerRef.current.remove();
 
         const el = document.createElement('div');
-        el.style.cssText = 'width:32px;height:32px;border-radius:50%;background:#7ED957;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);';
+        el.style.cssText = 'width:32px;height:32px;border-radius:50%;background:#34C26A;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);';
 
         markerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([lng, lat])
@@ -216,7 +216,7 @@ export default function RegistroFarmaciaScreen() {
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Store size={56} color="#7ED957" />}
+        icon={<Store size={56} color="#34C26A" />}
         title="Registra tu farmacia"
         description="Inicia sesión para solicitar el registro de tu farmacia en Keriva."
       />
@@ -226,9 +226,9 @@ export default function RegistroFarmaciaScreen() {
   // Guard: already a farmacia or admin
   if (perfil && perfil.rol !== 'usuario') {
     return (
-      <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
         <View style={styles.centerContent}>
-          <Store size={56} color="#7ED957" />
+          <Store size={56} color="#34C26A" />
           <Text style={styles.centerTitle}>
             {perfil.rol === 'farmacia' ? 'Ya eres farmacia' : 'Eres administrador'}
           </Text>
@@ -243,8 +243,8 @@ export default function RegistroFarmaciaScreen() {
 
   if (checkingExisting) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: '#0F1F17' }]}>
-        <ActivityIndicator size="large" color="#7ED957" />
+      <View style={[styles.container, styles.centerContent, { backgroundColor: '#052419' }]}>
+        <ActivityIndicator size="large" color="#34C26A" />
       </View>
     );
   }
@@ -252,7 +252,7 @@ export default function RegistroFarmaciaScreen() {
   // Already has pending request
   if (existingSolicitud) {
     return (
-      <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
         <View style={styles.inner}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <ArrowLeft color="#FFFFFF" size={24} />
@@ -276,7 +276,7 @@ export default function RegistroFarmaciaScreen() {
   // Success
   if (success) {
     return (
-      <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={{ fontSize: 64 }}>✅</Text>
           <Text style={styles.centerTitle}>¡Solicitud enviada!</Text>
@@ -293,7 +293,7 @@ export default function RegistroFarmaciaScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -308,7 +308,7 @@ export default function RegistroFarmaciaScreen() {
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <Store size={32} color="#7ED957" />
+            <Store size={32} color="#34C26A" />
             <Text style={styles.title}>Registrar farmacia</Text>
             <Text style={styles.subtitle}>
               Completa los datos de tu farmacia. Un administrador revisará tu solicitud.
@@ -445,7 +445,7 @@ export default function RegistroFarmaciaScreen() {
 
           {documentoUri ? (
             <View style={styles.docAttached}>
-              <Paperclip size={16} color="#7ED957" />
+              <Paperclip size={16} color="#34C26A" />
               <Text style={styles.docAttachedName} numberOfLines={1}>{documentoName}</Text>
               <TouchableOpacity onPress={() => { setDocumentoUri(null); setDocumentoName(null); }}>
                 <X size={18} color="rgba(255,255,255,0.6)" />
@@ -466,7 +466,7 @@ export default function RegistroFarmaciaScreen() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#1A7A4A" />
+              <ActivityIndicator color="#106B4F" />
             ) : (
               <Text style={styles.primaryButtonText}>Enviar solicitud</Text>
             )}
@@ -519,7 +519,7 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', marginBottom: 24, gap: 8 },
   title: { fontFamily: 'Poppins-Bold', fontSize: 26, color: '#FFFFFF', textAlign: 'center' },
   subtitle: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 20 },
-  sectionLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#7ED957', marginBottom: 10, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 },
+  sectionLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#34C26A', marginBottom: 10, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 },
   inputWrapper: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
@@ -528,9 +528,9 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 15, color: '#FFFFFF' },
   mapSection: { marginBottom: 10 },
-  mapLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#7ED957', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+  mapLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#34C26A', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
   mapContainer: { height: 200, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  mapCoords: { fontFamily: 'DMSans-Medium', fontSize: 12, color: '#7ED957', marginTop: 6 },
+  mapCoords: { fontFamily: 'DMSans-Medium', fontSize: 12, color: '#34C26A', marginTop: 6 },
   mapHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6 },
   docHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 },
   docButton: {
@@ -541,24 +541,24 @@ const styles = StyleSheet.create({
   docButtonText: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.5)' },
   docAttached: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(126,217,87,0.15)', borderRadius: 12,
+    backgroundColor: 'rgba(52, 194, 106,0.15)', borderRadius: 12,
     paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: 'rgba(126,217,87,0.3)',
+    borderWidth: 1, borderColor: 'rgba(52, 194, 106,0.3)',
   },
-  docAttachedName: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 13, color: '#7ED957' },
+  docAttachedName: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 13, color: '#34C26A' },
   errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FF6B6B', textAlign: 'center', marginVertical: 8 },
   primaryButton: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
-  primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#1A7A4A' },
+  primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#106B4F' },
   buttonDisabled: { opacity: 0.7 },
   centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, paddingHorizontal: 32 },
   centerTitle: { fontFamily: 'Poppins-Bold', fontSize: 22, color: '#FFFFFF', textAlign: 'center' },
   centerText: { fontFamily: 'DMSans-Regular', fontSize: 15, color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 22 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '60%' },
-  modalTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 18, color: '#0F1F17', marginBottom: 16 },
+  modalTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 18, color: '#052419', marginBottom: 16 },
   modalItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   modalItemText: { fontFamily: 'DMSans-Regular', fontSize: 16, color: '#333' },
-  modalItemActive: { color: '#1A7A4A', fontFamily: 'DMSans-Bold' },
+  modalItemActive: { color: '#106B4F', fontFamily: 'DMSans-Bold' },
   modalClose: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   modalCloseText: { fontFamily: 'DMSans-Medium', fontSize: 15, color: '#666' },
 });

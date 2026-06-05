@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { generateCSV, downloadCSV } from '@/lib/csv';
-import type { FarmaciaConPrecios } from '@/lib/database.types';
+import type { FarmaciaOsm } from '@/lib/database.types';
 
 export type PharmacyView = {
   id: string;
@@ -14,6 +14,8 @@ export type PharmacyView = {
   active: boolean;
   minPrice: number;
   isCheapest: boolean;
+  /** true si la farmacia paga afiliación WhatsApp (adendum v2.1 §3.2) */
+  afiliada?: boolean;
 };
 
 function toNumber(value: string | number | null | undefined): number {
@@ -44,9 +46,19 @@ export async function getAllPharmacyOptions(): Promise<PharmacyOption[]> {
   }));
 }
 
+/**
+ * Fuente primaria del mapa: tabla `farmacias_osm` (839 farmacias
+ * georreferenciadas desde OpenStreetMap, ver scripts/fetch_farmacias_osm.js).
+ *
+ * Incluye JOIN con `farmacia_whatsapp` para marcar farmacias afiliadas
+ * (adendum v2.1 §3.2). Las afiliadas muestran botón WhatsApp en la card.
+ *
+ * Nota: minPrice/isCheapest quedan en 0/false hasta que el refactor del
+ * Bloque 3 (precio rango ±5% + auditoría) conecte con `precios_base`.
+ */
 export async function getActivePharmacies(): Promise<PharmacyView[]> {
   const { data, error } = await supabase
-    .from('Farmacias')
+    .from('farmacias_osm')
     .select(`
       id,
       nombre,
@@ -56,44 +68,47 @@ export async function getActivePharmacies(): Promise<PharmacyView[]> {
       longitud,
       telefono,
       horario,
-      activa,
-      Precios(precio)
+      farmacia_id,
+      activa
     `)
     .eq('activa', true)
     .order('nombre', { ascending: true });
 
   if (error) throw error;
 
-  const rows = (data as unknown as FarmaciaConPrecios[]) ?? [];
+  const rows = (data as unknown as FarmaciaOsm[]) ?? [];
 
-  const mapped: PharmacyView[] = rows.map((p) => {
-    const prices = (p.Precios ?? []).map((x) => toNumber(x.precio)).filter((n) => n > 0);
-    const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-    return {
-      id: String(p.id),
-      name: p.nombre,
-      address: p.direccion,
-      city: p.ciudad,
-      latitude: toNumber(p.latitud),
-      longitude: toNumber(p.longitud),
-      phone: p.telefono ?? 'No disponible',
-      hours: p.horario ?? 'Consultar horario',
-      active: p.activa,
-      minPrice,
-      isCheapest: false,
-    };
-  });
+  // Lookup de afiliación: un query separado a farmacia_whatsapp porque el
+  // FK va contra "Farmacias"(id) legacy y farmacias_osm puede no tener
+  // el link resuelto todavía.
+  const linkedIds = rows
+    .map((r) => r.farmacia_id)
+    .filter((id): id is number => typeof id === 'number');
 
-  // Flag the cheapest pharmacy (only among those that have reported prices).
-  const withPrice = mapped.filter((p) => p.minPrice > 0);
-  if (withPrice.length > 0) {
-    const globalMin = Math.min(...withPrice.map((p) => p.minPrice));
-    for (const p of mapped) {
-      p.isCheapest = p.minPrice === globalMin && p.minPrice > 0;
-    }
+  const afiliadasSet = new Set<number>();
+  if (linkedIds.length > 0) {
+    const { data: afiliadas } = await supabase
+      .from('farmacia_whatsapp')
+      .select('farmacia_id')
+      .eq('afiliada', true)
+      .in('farmacia_id', linkedIds);
+    (afiliadas ?? []).forEach((a) => afiliadasSet.add(a.farmacia_id as number));
   }
 
-  return mapped;
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.nombre,
+    address: p.direccion ?? 'Sin dirección registrada',
+    city: p.ciudad ?? '',
+    latitude: toNumber(p.latitud),
+    longitude: toNumber(p.longitud),
+    phone: p.telefono ?? 'No disponible',
+    hours: p.horario ?? 'Consultar horario',
+    active: p.activa,
+    minPrice: 0,      // reservado para Bloque 3 (rango + auditoría)
+    isCheapest: false,
+    afiliada: p.farmacia_id ? afiliadasSet.has(p.farmacia_id) : false,
+  }));
 }
 
 // ── Admin functions ─────────────────────────────────────────
@@ -161,7 +176,7 @@ export async function exportFarmaciasCSV(): Promise<void> {
     longitud: String(f.longitud),
   }));
   const csv = generateCSV(FARMACIA_CSV_HEADERS, rows);
-  downloadCSV(csv, `farmacias_${new Date().toISOString().slice(0, 10)}.csv`);
+  await downloadCSV(csv, `farmacias_${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export async function importFarmaciasCSV(

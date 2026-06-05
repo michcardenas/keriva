@@ -31,7 +31,7 @@ export default function LanguageSelector() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t.splash.language}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <X size={24} color="#0F1F17" />
+                <X size={24} color="#052419" />
               </TouchableOpacity>
             </View>
 
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 20,
-    color: '#0F1F17',
+    color: '#052419',
   },
   languageList: {
     padding: 20,
@@ -122,18 +122,18 @@ const styles = StyleSheet.create({
   languageItemActive: {
     backgroundColor: '#E8F5E9',
     borderWidth: 1,
-    borderColor: '#7ED957',
+    borderColor: '#34C26A',
   },
   languageName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 16,
-    color: '#0F1F17',
+    color: '#052419',
   },
   checkmark: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#7ED957',
+    backgroundColor: '#34C26A',
     justifyContent: 'center',
     alignItems: 'center',
   },

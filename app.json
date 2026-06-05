@@ -20,20 +20,46 @@
       "name": "Keriva - Encuentra tu Farmacia",
       "shortName": "Keriva",
       "description": "Encuentra farmacias de turno cerca de ti. Reporta y descubre farmacias abiertas 24/7.",
-      "themeColor": "#10B981",
+      "themeColor": "#106B4F",
       "backgroundColor": "#111827"
     },
-    "plugins": ["expo-router", "expo-font", "expo-web-browser"],
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Keriva necesita acceso a tus fotos para que puedas adjuntar la foto del precio reportado.",
+          "cameraPermission": "Keriva necesita acceso a la cámara para que puedas tomar una foto del precio en la farmacia."
+        }
+      ]
+    ],
     "android": {
       "package": "app.keriva.farmacias",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#106B4F"
+      },
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCLBy9-U16R-yYLF4XojNaO5GbM95Us33M"
         }
       }
     },
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#106B4F"
+    },
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9167a122-d152-4f2a-8b6f-5a38d338496e"
+      }
     }
   }
 }

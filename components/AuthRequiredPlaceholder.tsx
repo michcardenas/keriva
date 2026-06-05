@@ -22,7 +22,7 @@ export default function AuthRequiredPlaceholder({
 
   return (
     <LinearGradient
-      colors={['#0F1F17', '#1A7A4A', '#0F1F17']}
+      colors={['#052419', '#106B4F', '#052419']}
       style={styles.container}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(126, 217, 87, 0.1)',
+    backgroundColor: 'rgba(52, 194, 106, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 28,
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   secondaryButton: {
     borderWidth: 2,

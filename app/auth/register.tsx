@@ -9,10 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Search } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Eye, EyeOff } from 'lucide-react-native';
 import { signUpWithEmail } from '@/lib/api/auth';
 
 export default function RegisterScreen() {
@@ -23,6 +24,7 @@ export default function RegisterScreen() {
   const [telefono, setTelefono] = useState('');
   const [cedula, setCedula] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit() {
@@ -59,7 +61,7 @@ export default function RegisterScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -75,10 +77,11 @@ export default function RegisterScreen() {
 
           {/* Logo + branding */}
           <View style={styles.branding}>
-            <View style={styles.logoCircle}>
-              <Search color="#7ED957" size={28} strokeWidth={3} />
-            </View>
-            <Text style={styles.logoText}>keriva</Text>
+            <Image
+              source={require('@/assets/images/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.header}>
@@ -148,11 +151,21 @@ export default function RegisterScreen() {
                 style={styles.input}
                 placeholder="Contraseña (mínimo 6)"
                 placeholderTextColor="rgba(255,255,255,0.5)"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
                 editable={!loading}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color="rgba(255,255,255,0.6)" />
+                ) : (
+                  <Eye size={20} color="rgba(255,255,255,0.6)" />
+                )}
+              </TouchableOpacity>
             </View>
 
             {error && <Text style={styles.errorText}>{error}</Text>}
@@ -163,7 +176,7 @@ export default function RegisterScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#1A7A4A" />
+                <ActivityIndicator color="#106B4F" />
               ) : (
                 <Text style={styles.primaryButtonText}>Crear cuenta</Text>
               )}
@@ -206,37 +219,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  logoCircle: {
-    position: 'relative',
-    width: 60,
-    height: 60,
-    backgroundColor: 'rgba(126, 217, 87, 0.1)',
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  pillDot: {
-    position: 'absolute',
-    width: 12,
-    height: 6,
-    flexDirection: 'row',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  pillHalf: {
-    width: 6,
-    height: 6,
-    backgroundColor: '#7ED957',
-  },
-  pillHalfWhite: {
-    backgroundColor: '#FFFFFF',
-  },
-  logoText: {
-    fontFamily: 'Poppins-Black',
-    fontSize: 30,
-    color: '#FFFFFF',
-    letterSpacing: -1,
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   header: { marginBottom: 18, alignItems: 'center' },
   title: {
@@ -287,7 +272,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   disclaimer: {
     fontFamily: 'DMSans-Regular',
@@ -306,6 +291,6 @@ const styles = StyleSheet.create({
   },
   linkTextBold: {
     fontFamily: 'DMSans-Bold',
-    color: '#7ED957',
+    color: '#34C26A',
   },
 });

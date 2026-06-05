@@ -9,10 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, Search } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { signInWithEmail } from '@/lib/api/auth';
 
 export default function LoginScreen() {
@@ -20,6 +21,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit() {
@@ -39,7 +41,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -55,10 +57,11 @@ export default function LoginScreen() {
 
           {/* Logo + branding */}
           <View style={styles.branding}>
-            <View style={styles.logoCircle}>
-              <Search color="#7ED957" size={32} strokeWidth={3} />
-            </View>
-            <Text style={styles.logoText}>keriva</Text>
+            <Image
+              source={require('@/assets/images/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.tagline}>busca.compara.ahorra.</Text>
           </View>
 
@@ -91,11 +94,21 @@ export default function LoginScreen() {
                 style={styles.input}
                 placeholder="Contraseña"
                 placeholderTextColor="rgba(255,255,255,0.5)"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
                 editable={!loading}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color="rgba(255,255,255,0.6)" />
+                ) : (
+                  <Eye size={20} color="rgba(255,255,255,0.6)" />
+                )}
+              </TouchableOpacity>
             </View>
 
             {error && <Text style={styles.errorText}>{error}</Text>}
@@ -106,7 +119,7 @@ export default function LoginScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#1A7A4A" />
+                <ActivityIndicator color="#106B4F" />
               ) : (
                 <Text style={styles.primaryButtonText}>Entrar</Text>
               )}
@@ -165,42 +178,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  logoCircle: {
-    position: 'relative',
-    width: 72,
-    height: 72,
-    backgroundColor: 'rgba(126, 217, 87, 0.1)',
-    borderRadius: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  pillDot: {
-    position: 'absolute',
-    width: 14,
-    height: 7,
-    flexDirection: 'row',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  pillHalf: {
-    width: 7,
-    height: 7,
-    backgroundColor: '#7ED957',
-  },
-  pillHalfWhite: {
-    backgroundColor: '#FFFFFF',
-  },
-  logoText: {
-    fontFamily: 'Poppins-Black',
-    fontSize: 36,
-    color: '#FFFFFF',
-    letterSpacing: -1,
+  logoImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 4,
   },
   tagline: {
     fontFamily: 'DMSans-Medium',
     fontSize: 13,
-    color: '#7ED957',
+    color: '#34C26A',
     marginTop: -2,
   },
   header: { marginBottom: 24, alignItems: 'center' },
@@ -252,13 +238,13 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   forgotButton: { alignItems: 'center', paddingVertical: 6 },
   forgotText: {
     fontFamily: 'DMSans-Medium',
     fontSize: 13,
-    color: '#7ED957',
+    color: '#34C26A',
   },
   divider: {
     flexDirection: 'row',
@@ -278,7 +264,7 @@ const styles = StyleSheet.create({
   },
   registerButton: {
     borderWidth: 2,
-    borderColor: '#7ED957',
+    borderColor: '#34C26A',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -286,7 +272,7 @@ const styles = StyleSheet.create({
   registerButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: '#7ED957',
+    color: '#34C26A',
   },
   exploreLink: {
     alignItems: 'center',

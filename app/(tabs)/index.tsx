@@ -14,9 +14,10 @@ import {
 } from '@/lib/api/search';
 import LanguageSelector from '@/components/LanguageSelector';
 import LoginNudge from '@/components/LoginNudge';
+import KerivaLoader from '@/components/KerivaLoader';
 
 const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
-  { label: 'Todo', icon: Pill, color: '#1A7A4A' },
+  { label: 'Todo', icon: Pill, color: '#106B4F' },
   { label: 'Presión arterial', icon: Heart, color: '#E53935' },
   { label: 'Analgésico', icon: Zap, color: '#FF6F00' },
   { label: 'Antibiótico', icon: Shield, color: '#1565C0' },
@@ -131,14 +132,14 @@ export default function SearchScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#1A7A4A', '#0F1F17']}
+        colors={['#106B4F', '#052419']}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       >
         <View style={styles.topBar}>
           <View style={styles.locationContainer}>
-            <MapPin size={16} color="#7ED957" />
+            <MapPin size={16} color="#34C26A" />
             <Text style={styles.locationText}>Santiago, RD</Text>
           </View>
           <LanguageSelector />
@@ -156,7 +157,7 @@ export default function SearchScreen() {
             autoCapitalize="none"
           />
           <TouchableOpacity style={styles.barcodeButton}>
-            <ScanBarcode size={20} color="#7ED957" />
+            <ScanBarcode size={20} color="#34C26A" />
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -170,10 +171,7 @@ export default function SearchScreen() {
         )}
 
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#1A7A4A" />
-            <Text style={styles.loadingText}>Cargando medicamentos...</Text>
-          </View>
+          <KerivaLoader label="Cargando medicamentos…" fullscreen={false} size={80} />
         ) : (
           <>
             <View style={styles.categorySection}>
@@ -214,13 +212,13 @@ export default function SearchScreen() {
                 {totalResults > 0 ? (
                   <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                      <Search size={18} color="#1A7A4A" />
+                      <Search size={18} color="#106B4F" />
                       <Text style={styles.sectionTitle}>
                         {totalResults} resultado{totalResults !== 1 ? 's' : ''}
                       </Text>
                       {useAdvanced && (
                         <View style={styles.catalogBadge}>
-                          <Database size={12} color="#1A7A4A" />
+                          <Database size={12} color="#106B4F" />
                           <Text style={styles.catalogBadgeText}>
                             DIGEMAPS + Keriva
                           </Text>
@@ -244,7 +242,7 @@ export default function SearchScreen() {
                             {item.source === 'curado' ? (
                               <Text style={styles.pillIconText}>💊</Text>
                             ) : (
-                              <BookOpen size={18} color="#1A7A4A" />
+                              <BookOpen size={18} color="#106B4F" />
                             )}
                           </View>
                           <View style={styles.recentItemInfo}>
@@ -330,7 +328,7 @@ export default function SearchScreen() {
             {!searching && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <TrendingUp size={18} color="#1A7A4A" />
+                  <TrendingUp size={18} color="#106B4F" />
                   <Text style={styles.sectionTitle}>Medicamentos populares</Text>
                 </View>
 
@@ -434,7 +432,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
-    color: '#0F1F17',
+    color: '#052419',
   },
   recentItem: {
     flexDirection: 'row',
@@ -473,7 +471,7 @@ const styles = StyleSheet.create({
   recentItemName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 15,
-    color: '#0F1F17',
+    color: '#052419',
   },
   recentItemCategory: {
     fontFamily: 'DMSans-Regular',
@@ -484,7 +482,7 @@ const styles = StyleSheet.create({
   recentItemPrice: {
     fontFamily: 'DMSans-Regular',
     fontSize: 13,
-    color: '#1A7A4A',
+    color: '#106B4F',
     marginTop: 2,
   },
   arrow: {
@@ -497,7 +495,7 @@ const styles = StyleSheet.create({
   },
   arrowText: {
     fontSize: 16,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   categorySection: {
     paddingTop: 16,
@@ -556,7 +554,7 @@ const styles = StyleSheet.create({
   popularCardName: {
     fontFamily: 'DMSans-Medium',
     fontSize: 14,
-    color: '#0F1F17',
+    color: '#052419',
     textAlign: 'center',
   },
   popularCardDosage: {
@@ -569,7 +567,7 @@ const styles = StyleSheet.create({
   popularCardPrice: {
     fontFamily: 'DMSans-Regular',
     fontSize: 12,
-    color: '#1A7A4A',
+    color: '#106B4F',
     textAlign: 'center',
     marginTop: 4,
   },
@@ -581,7 +579,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontFamily: 'DMSans-Medium',
     fontSize: 14,
-    color: '#1A7A4A',
+    color: '#106B4F',
     marginTop: 12,
   },
   errorBanner: {
@@ -611,7 +609,7 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontFamily: 'Poppins-SemiBold',
     fontSize: 18,
-    color: '#0F1F17',
+    color: '#052419',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -627,7 +625,7 @@ const styles = StyleSheet.create({
   recentItemIngredient: {
     fontFamily: 'DMSans-Regular',
     fontSize: 11,
-    color: '#1A7A4A',
+    color: '#106B4F',
     marginTop: 1,
   },
   resultMetaRow: {
@@ -648,7 +646,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   sourceTagCurado: {
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   sourceTagCatalog: {
     color: '#0D47A1',
@@ -666,6 +664,6 @@ const styles = StyleSheet.create({
   catalogBadgeText: {
     fontFamily: 'DMSans-Bold',
     fontSize: 9,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
 });

@@ -55,7 +55,7 @@ export default function VerifyScreen() {
 
   if (verified) {
     return (
-      <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
         <View style={styles.inner}>
           <View style={styles.content}>
             <Text style={styles.emoji}>✅</Text>
@@ -76,7 +76,7 @@ export default function VerifyScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F1F17', '#1A7A4A', '#0F1F17']} style={styles.container}>
+    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
       <View style={styles.inner}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/auth/login')}>
           <ArrowLeft color="#FFFFFF" size={24} />
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   emailBold: {
     fontFamily: 'DMSans-Bold',
-    color: '#7ED957',
+    color: '#34C26A',
   },
   hint: {
     fontFamily: 'DMSans-Regular',
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   infoText: {
     fontFamily: 'DMSans-Medium',
     fontSize: 13,
-    color: '#7ED957',
+    color: '#34C26A',
     textAlign: 'center',
   },
   errorText: {
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: '#1A7A4A',
+    color: '#106B4F',
   },
   buttonDisabled: { opacity: 0.7 },
 });

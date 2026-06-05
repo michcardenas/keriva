@@ -25,6 +25,8 @@ export type MedicationDetailView = {
     price: number;
     pharmacyName: string;
     pharmacyAddress: string;
+    latitude: number;
+    longitude: number;
   }>;
 };
 
@@ -164,7 +166,7 @@ export async function getMedicationDetail(id: string): Promise<MedicationDetailV
       precio_referencia_rd,
       Precios(
         precio,
-        Farmacias(nombre, direccion)
+        Farmacias(nombre, direccion, latitud, longitud)
       )
     `)
     .eq('id', numericId)
@@ -181,6 +183,8 @@ export async function getMedicationDetail(id: string): Promise<MedicationDetailV
       price: toNumber(p.precio),
       pharmacyName: p.Farmacias?.nombre ?? 'Farmacia desconocida',
       pharmacyAddress: p.Farmacias?.direccion ?? '',
+      latitude: toNumber(p.Farmacias?.latitud),
+      longitude: toNumber(p.Farmacias?.longitud),
     }))
     .filter((p) => p.price > 0)
     .sort((a, b) => a.price - b.price);
@@ -226,7 +230,7 @@ export async function exportMedicamentosCSV(): Promise<void> {
   }));
 
   const csv = generateCSV(MED_CSV_HEADERS, rows);
-  downloadCSV(csv, `medicamentos_${new Date().toISOString().slice(0, 10)}.csv`);
+  await downloadCSV(csv, `medicamentos_${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export async function importMedicamentosCSV(
