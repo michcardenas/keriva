@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Search, Map, Camera, User, ShieldCheck, Store } from 'lucide-react-native';
+import { Search, Map, Camera, User, Store } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useAuth } from '@/lib/AuthContext';
@@ -71,15 +71,6 @@ export default function TabLayout() {
             featureFlags.reportTabEnabled && !isGuest
               ? '/(tabs)/report'
               : null,
-        }}
-      />
-      <Tabs.Screen
-        name="moderation"
-        options={{
-          title: t.nav.moderate,
-          tabBarIcon: ({ size, color }) => <ShieldCheck size={22} color={color} />,
-          // Solo admin. La farmacia tiene su propio tab "Mi Farmacia".
-          href: rol === 'admin' ? '/(tabs)/moderation' : null,
         }}
       />
       <Tabs.Screen

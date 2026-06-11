@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { Horarios } from '@/lib/horarios';
 
 // =====================================================================
 // Sucursales — sedes de una farmacia (cuenta = "Farmacias".id, bigint).
@@ -16,6 +17,7 @@ export type Sucursal = {
   telefono: string | null;
   whatsapp: string | null;
   horario: string | null;
+  horarios: Horarios | null;
   latitud: number | null;
   longitud: number | null;
   activa: boolean;
@@ -32,6 +34,7 @@ type SucursalRow = {
   telefono: string | null;
   whatsapp: string | null;
   horario: string | null;
+  horarios: Horarios | null;
   latitud: string | number | null;
   longitud: string | number | null;
   activa: boolean;
@@ -55,6 +58,7 @@ function mapSucursal(r: SucursalRow): Sucursal {
     telefono: r.telefono,
     whatsapp: r.whatsapp,
     horario: r.horario,
+    horarios: r.horarios ?? null,
     latitud: toNum(r.latitud),
     longitud: toNum(r.longitud),
     activa: r.activa,
@@ -64,7 +68,22 @@ function mapSucursal(r: SucursalRow): Sucursal {
 }
 
 const SELECT =
-  'id, farmacia_id, nombre, direccion, ciudad, telefono, whatsapp, horario, latitud, longitud, activa, es_principal, created_at';
+  // `horarios` (jsonb) puede no existir hasta que la migración U2 corra. El
+  // select degrada bien — supabase-js ignora columnas faltantes en el response.
+  'id, farmacia_id, nombre, direccion, ciudad, telefono, whatsapp, horario, horarios, latitud, longitud, activa, es_principal, created_at';
+
+/** Actualiza solo el JSONB de horarios estructurados (U2 "Abierta ahora"). */
+export async function updateHorariosSucursal(
+  id: string,
+  horarios: Horarios | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('sucursales')
+    .update({ horarios, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
 
 /** Sucursales de una farmacia (la cuenta dueña ve todas, incl. inactivas). */
 export async function getSucursales(farmaciaId: number): Promise<Sucursal[]> {

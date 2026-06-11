@@ -20,8 +20,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { ThemeProvider, useColorMode } from '@/lib/ThemeContext';
 import { initSentry } from '@/lib/sentry';
 import { initAnalytics } from '@/lib/analytics';
+import ConsentModal from '@/components/ConsentModal';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -66,15 +68,23 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <LanguageProvider>
-          <AuthProvider>
-            <RootNavigator />
-            <StatusBar style="light" />
-          </AuthProvider>
-        </LanguageProvider>
+        <ThemeProvider>
+          <LanguageProvider>
+            <AuthProvider>
+              <RootNavigator />
+              <AppStatusBar />
+            </AuthProvider>
+          </LanguageProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+/** StatusBar reactivo al modo claro/oscuro (T1). */
+function AppStatusBar() {
+  const { mode } = useColorMode();
+  return <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />;
 }
 
 /**
@@ -86,12 +96,17 @@ export default function RootLayout() {
  * Protected: Report, Profile and Moderation require authentication.
  * Authenticated users on auth/splash screens are sent to tabs.
  */
-const PROTECTED_TABS = new Set(['report', 'profile', 'moderation']);
+const PROTECTED_TABS = new Set(['report', 'profile']);
 
 function RootNavigator() {
-  const { session, loading, perfil } = useAuth();
+  const { session, loading, perfil, refreshPerfil } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  // El modal se descarta por sesión (no por para siempre): si el usuario dice
+  // "Ahora no" no lo agobiamos, pero la próxima vez que abra la app vuelve a
+  // ofrecerlo hasta que acepte. Si rechaza dentro de auth.user_metadata podemos
+  // persistir más adelante; por ahora basta con el estado local.
+  const [consentDismissed, setConsentDismissed] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -126,23 +141,47 @@ function RootNavigator() {
     }
   }, [session, loading, segments, router, perfil?.rol]);
 
+  // Consentimiento Ley 172-13 — solo rol usuario, en sesión, perfil cargado
+  // y sin consentimiento previo. La farmacia gestiona una empresa, no entran
+  // datos personales sensibles del operador en el mismo nivel.
+  const showConsentModal =
+    !!session &&
+    !!perfil &&
+    perfil.rol === 'usuario' &&
+    perfil.consentimiento172_13At === null &&
+    !consentDismissed;
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="auth" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="detail" />
-      <Stack.Screen name="registro-farmacia" />
-      <Stack.Screen name="familia" />
-      <Stack.Screen name="farmacia/sucursales" />
-      <Stack.Screen name="farmacia/inventario" />
-      <Stack.Screen name="farmacia/carga-masiva" />
-      <Stack.Screen name="farmacia/descuentos" />
-      <Stack.Screen name="farmacia/reservas" />
-      <Stack.Screen name="farmacia/metricas" />
-      <Stack.Screen name="farmacia/cuenta" />
-      <Stack.Screen name="resenas/[farmaciaId]" />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="auth" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="detail" />
+        <Stack.Screen name="registro-farmacia" />
+        <Stack.Screen name="familia" />
+        <Stack.Screen name="farmacia/sucursales" />
+        <Stack.Screen name="farmacia/inventario" />
+        <Stack.Screen name="farmacia/carga-masiva" />
+        <Stack.Screen name="farmacia/descuentos" />
+        <Stack.Screen name="farmacia/reservas" />
+        <Stack.Screen name="farmacia/metricas" />
+        <Stack.Screen name="farmacia/cuenta" />
+        <Stack.Screen name="farmacia/horarios" />
+        <Stack.Screen name="farmacia/encargados" />
+        <Stack.Screen name="resenas/[farmaciaId]" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <ConsentModal
+        visible={showConsentModal}
+        userId={perfil?.id ?? ''}
+        onAccepted={() => {
+          // refreshPerfil trae el timestamp recién persistido, el modal se
+          // cierra solo por el cambio de condición.
+          void refreshPerfil();
+        }}
+        onDismissed={() => setConsentDismissed(true)}
+      />
+    </>
   );
 }

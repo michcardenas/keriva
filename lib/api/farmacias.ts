@@ -17,6 +17,8 @@ export type PharmacyView = {
   isCheapest: boolean;
   /** true si la farmacia paga afiliación WhatsApp (adendum v2.1 §3.2) */
   afiliada?: boolean;
+  /** Farmacias (legacy bigint) FK — null si esta entrada OSM no está vinculada a una cuenta Keriva. */
+  farmaciaIdLegacy?: number | null;
 };
 
 function toNumber(value: string | number | null | undefined): number {
@@ -130,6 +132,7 @@ async function mapOsmRows(rows: FarmaciaOsm[]): Promise<PharmacyView[]> {
     minPrice: 0,      // reservado para Bloque 3 (rango + auditoría)
     isCheapest: false,
     afiliada: p.farmacia_id ? afiliadasSet.has(p.farmacia_id) : false,
+    farmaciaIdLegacy: p.farmacia_id ?? null,
   }));
 }
 
@@ -179,6 +182,21 @@ export async function getMiFarmacia(): Promise<FarmaciaCuenta | null> {
   const row = Array.isArray(data) ? data[0] : null;
   if (error || !row) return null;
   return { id: row.id, nombre: row.nombre, logoUrl: row.logo_url ?? null };
+}
+
+/**
+ * L2: estado de gating de la cuenta. Si la farmacia está inactiva (admin la
+ * desactivó), el front bloquea el acceso al hub. La RLS de "Farmacias" deja
+ * ver la fila propia incluso desactivada.
+ */
+export async function getMiFarmaciaActiva(farmaciaId: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('Farmacias')
+    .select('activa')
+    .eq('id', farmaciaId)
+    .maybeSingle();
+  if (error || !data) return false;
+  return !!(data as { activa: boolean }).activa;
 }
 
 /** Actualiza el nombre comercial (y opcionalmente el logo) de la cuenta. */

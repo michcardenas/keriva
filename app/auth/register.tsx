@@ -8,7 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Eye, EyeOff } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Eye, EyeOff, Store, ChevronRight } from 'lucide-react-native';
 import { signUpWithEmail } from '@/lib/api/auth';
 import { capture } from '@/lib/analytics';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -19,10 +19,15 @@ import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
 import PillBackground from '@/components/ui/PillBackground';
 
 type Field = 'nombre' | 'email' | 'telefono' | 'cedula' | 'password';
+type TipoCuenta = 'usuario' | 'farmacia' | null;
 
 export default function RegisterScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+  // L1: primer paso del registro → elegir tipo de cuenta. Al elegir farmacia
+  // se redirige al flujo de solicitud, que tiene sus propios campos (legales,
+  // sucursal principal, documentos).
+  const [tipoCuenta, setTipoCuenta] = useState<TipoCuenta>(null);
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,6 +37,14 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState<Field | null>(null);
+
+  function elegirTipo(tipo: 'usuario' | 'farmacia') {
+    if (tipo === 'farmacia') {
+      router.replace('/registro-farmacia');
+      return;
+    }
+    setTipoCuenta('usuario');
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -70,11 +83,93 @@ export default function RegisterScreen() {
   const iconColor = (field: Field) =>
     focused === field ? theme.colors.accent : theme.colors.textMuted;
 
+  // Paso 1: selector de tipo de cuenta (Usuario vs Farmacia).
+  if (tipoCuenta === null) {
+    return (
+      <View style={styles.container}>
+        <PillBackground />
+        <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+          <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+            <ArrowLeft color={theme.colors.textPrimary} size={22} />
+          </PressableScale>
+
+          <Reveal variant="up" delay={60}>
+            <View style={styles.branding}>
+              <View style={styles.logoBadge}>
+                <Image
+                  source={require('@/assets/images/logo.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.title}>¿Cómo quieres usar Keriva?</Text>
+              <Text style={styles.subtitle}>
+                Elige el tipo de cuenta para empezar
+              </Text>
+            </View>
+          </Reveal>
+
+          <View style={styles.form}>
+            <Reveal index={1} delay={120}>
+              <PressableScale
+                style={styles.tipoCard}
+                onPress={() => elegirTipo('usuario')}
+              >
+                <View style={styles.tipoIconBubble}>
+                  <User size={26} color={theme.colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tipoTitle}>Soy un usuario</Text>
+                  <Text style={styles.tipoDesc}>
+                    Busco medicamentos, comparo precios y encuentro farmacias cerca de mí.
+                  </Text>
+                </View>
+                <ChevronRight size={22} color={theme.colors.accent} />
+              </PressableScale>
+            </Reveal>
+
+            <Reveal index={2} delay={170}>
+              <PressableScale
+                style={styles.tipoCardFarmacia}
+                onPress={() => elegirTipo('farmacia')}
+              >
+                <View style={styles.tipoIconBubbleFarmacia}>
+                  <Store size={26} color={theme.colors.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tipoTitle}>Soy una farmacia</Text>
+                  <Text style={styles.tipoDesc}>
+                    Gestiono sucursales, inventario, descuentos y recibo reservas de mis clientes.
+                  </Text>
+                </View>
+                <ChevronRight size={22} color={theme.colors.warning} />
+              </PressableScale>
+            </Reveal>
+
+            <Reveal index={3} delay={220}>
+              <PressableScale
+                style={styles.linkButton}
+                onPress={() => router.replace('/auth/login')}
+                disabled={loading}
+              >
+                <Text style={styles.linkText}>
+                  {t.auth.alreadyHaveAccount}
+                  <Text style={styles.linkTextBold}>{t.auth.signIn}</Text>
+                </Text>
+              </PressableScale>
+            </Reveal>
+          </View>
+        </KeyboardAwareScreen>
+      </View>
+    );
+  }
+
+  // Paso 2: formulario de registro de USUARIO (el form actual).
   return (
     <View style={styles.container}>
       <PillBackground />
       <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
-        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+        <PressableScale style={styles.backButton} onPress={() => setTipoCuenta(null)} scaleTo={0.9}>
           <ArrowLeft color={theme.colors.textPrimary} size={22} />
         </PressableScale>
 
@@ -339,5 +434,54 @@ const styles = StyleSheet.create({
   linkTextBold: {
     fontFamily: theme.font.bodyBold,
     color: theme.colors.accent,
+  },
+  // L1 — selector tipo de cuenta (Usuario vs Farmacia)
+  tipoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 2,
+    borderColor: theme.colors.accentSoft,
+    ...theme.shadow.card,
+  },
+  tipoCardFarmacia: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 2,
+    borderColor: theme.colors.warningSoft,
+    ...theme.shadow.card,
+  },
+  tipoIconBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipoIconBubbleFarmacia: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipoTitle: {
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  tipoDesc: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    lineHeight: 17,
   },
 });

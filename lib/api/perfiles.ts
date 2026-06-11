@@ -18,6 +18,8 @@ export type PerfilCompleto = {
   avatarUrl: string | null;
   latitud: number | null;
   longitud: number | null;
+  /** Ley 172-13 RD: timestamp ISO si el usuario aceptó el tratamiento de datos de salud; null = no aceptado. */
+  consentimiento172_13At: string | null;
 };
 
 type PerfilRow = {
@@ -34,6 +36,7 @@ type PerfilRow = {
   avatar_url: string | null;
   latitud: number | null;
   longitud: number | null;
+  consentimiento_172_13_at: string | null;
 };
 
 function toPerfil(row: PerfilRow): PerfilCompleto {
@@ -51,6 +54,7 @@ function toPerfil(row: PerfilRow): PerfilCompleto {
     avatarUrl: row.avatar_url,
     latitud: row.latitud === null ? null : Number(row.latitud),
     longitud: row.longitud === null ? null : Number(row.longitud),
+    consentimiento172_13At: row.consentimiento_172_13_at ?? null,
   };
 }
 
@@ -58,13 +62,25 @@ export async function getPerfil(userId: string): Promise<PerfilCompleto | null> 
   const { data, error } = await supabase
     .from('perfiles')
     .select(
-      'id, nombre, email, idioma, ciudad, direccion, telefono, cedula, rol, farmacia_id, avatar_url, latitud, longitud',
+      // consentimiento_172_13_at puede no existir hasta que la migración U3 corra.
+      // El select degrada bien — supabase-js devuelve undefined para columnas faltantes.
+      'id, nombre, email, idioma, ciudad, direccion, telefono, cedula, rol, farmacia_id, avatar_url, latitud, longitud, consentimiento_172_13_at',
     )
     .eq('id', userId)
     .maybeSingle();
 
   if (error || !data) return null;
   return toPerfil(data as PerfilRow);
+}
+
+/**
+ * Registra el consentimiento Ley 172-13 del usuario actual. Idempotente:
+ * si ya aceptó, mantiene el timestamp original.
+ */
+export async function aceptarConsentimiento172_13(): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.rpc('aceptar_consentimiento_172_13');
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function updatePerfil(

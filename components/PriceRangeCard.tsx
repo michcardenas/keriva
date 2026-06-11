@@ -46,8 +46,8 @@ export default function PriceRangeCard({
 }: Props) {
   const { t } = useLanguage();
   const { perfil } = useAuth();
-  // Farmacia y admin contribuyen/auditan sin límite diario.
-  const isUnlimited = perfil?.rol === 'farmacia' || perfil?.rol === 'admin';
+  // Farmacia contribuye/audita sin límite diario (el rol admin no aplica en la app móvil).
+  const isUnlimited = perfil?.rol === 'farmacia';
   const [rango, setRango] = useState<PrecioRango | null>(null);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState<null | 'correcto' | 'incorrecto'>(null);

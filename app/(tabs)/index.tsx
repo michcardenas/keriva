@@ -22,6 +22,7 @@ import PillBackground from '@/components/ui/PillBackground';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
 import { capture } from '@/lib/analytics';
+import { logBusquedaSinResultado } from '@/lib/api/eventos';
 
 const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
   { label: 'Todo', icon: Pill, color: theme.colors.accent },
@@ -139,6 +140,11 @@ export default function SearchScreen() {
         setAdvancedResults(results);
         setFilteredMeds([]);
         setUseAdvanced(true);
+        // U4: si la búsqueda explícita (≥3 chars) no trajo resultados, lo
+        // capturamos como demanda insatisfecha para el admin.
+        if (trimmed.length >= 3 && results.length === 0) {
+          void logBusquedaSinResultado(trimmed, { categoria: selectedCategory });
+        }
       } else {
         const meds = await apiSearchMedications({
           query: trimmed,

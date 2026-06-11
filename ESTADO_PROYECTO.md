@@ -1,54 +1,64 @@
 # Estado del proyecto Keriva — Handoff de sesión
 
-> Última actualización: 2026-06-10. Documento para retomar el trabajo sin perder el hilo.
+> Última actualización: 2026-06-11. Documento para retomar el trabajo sin perder el hilo.
 
 ---
 
 ## 🔑 RETOMAR — palabra clave: **"KERIVA RESCOPE"**
 Al decir **"KERIVA RESCOPE"** (o "retomemos Keriva") en una nueva sesión, leer este bloque + las memorias.
 
-### Estado del re-scope (sesión 2026-06-09/10)
-El cliente redefinió la app en 3 roles. **Rol Farmacia = COMPLETO y verificado** con cuentas reales. **Puente Usuario↔Farmacia (reservar) = funcionando end-to-end.**
+### Estado a 2026-06-11 — Plan completo de la app móvil CERRADO
 
-**Decisiones cerradas (con el usuario):**
-- Mercado = **República Dominicana** (NO Colombia — descartado).
-- **Sucursales**: N por farmacia, cada una con datos propios. Cuenta única por farmacia.
-- **Precio + stock por sucursal**; stock = flag disponible/no.
-- **Carga masiva**: destino todas/una sucursal + modo actualizar/reemplazar.
-- **Catálogo maestro** = tabla `productos` (enlace obligatorio).
-- **Ventas** = vía reserva + confirmación de la farmacia.
-- **Búsqueda del usuario** corre sobre **inventario por sucursal** (gating inherente: solo aprobadas).
-- **Notificaciones** = 2da etapa (se cobra aparte).
+El cliente envió la documentación completa (`Keriva_Brief_Tecnico_Fase1_v1`, `Anexo_Tecnico_Roles_ACTUALIZADO`, `Plan_Trabajo_Farmacia`, `Fases_Alcance_Requerimientos`, `Mejoras_20.05`, `Llaves_Configuracion_Michael`). Esta sesión cerró TODO lo que figuraba como pendiente para la app móvil. Sólo quedan tareas que necesitan al cliente (llaves OneSignal, acceso DNS/Play Store) o son fuera de scope (Fase 6 IA, Admin web, deploy beta).
 
-**Migraciones de esta sesión (en `supabase/migrations/`) — el usuario las corre en el SQL Editor:**
-- `20260609001000_sucursales.sql` … `20260609001600_eventos.sql` (7 archivos: sucursales, seed principal, productos+concentracion, inventario_sucursal, descuentos, reservas, eventos) — ✅ CORRIDAS.
-- `20260609001700_solicitud_estados_enum.sql` + `20260609001800_solicitud_onboarding.sql` (onboarding) — ✅ CORRIDAS.
-- `20260609001900_farmacia_cuenta.sql` (perfil de cuenta) — ⬜ **PENDIENTE de correr**.
-- `_SEED_productos_prueba.sql` — seed opcional de catálogo de prueba.
+**Sprints completados esta jornada:**
+- **Sprint 0 — Plataforma** ✅ Sentry (Ley 172-13: PII redactada en message/extra/stacktrace, user.id solo con consentimiento) · PostHog cliente ligero (5 eventos: search_med, pharmacy_view, reserve_created, reserve_confirmed, signup_completed) · Google Maps verificado en config estática.
+- **Sprint 1 — Cerrar Rol Farmacia** ✅ Perfil farmacia con stats (sucursales/pendientes/ventas) · CTA "Crear cuenta como Farmacia" en login · E2E verificado con `farmacia@keriva.do`.
+- **Sprint 2 — Rol Usuario crítico** ✅ Consentimiento Ley 172-13 (modal + RPC `aceptar_consentimiento_172_13`) · Buscar por principio activo (RPC `buscar_medicamentos`) · Cercanía 2km en mapa (RPC PostGIS `farmacias_cercanas`) · GPS denegado → dirección manual (Google Geocoding) · Ampliar radio 5/10km · Botón llamar `tel:`.
+- **Sprint 3 — Rol Usuario complementario** ✅ "Abierta ahora" (jsonb horarios por sucursal + editor + helper isOpenNow America/Santo_Domingo + filtro+badge en detail.tsx) · Captura demanda insatisfecha (logBusquedaSinResultado en index.tsx + logSinDisponibilidad en detail.tsx + vista `v_demanda_insatisfecha` para admin web).
+- **Cleanup Admin** ✅ Borrado de UI admin de la app móvil (moderation.tsx eliminado, branches `rol === 'admin'` en profile/PriceRangeCard removidos, tab Moderation fuera del layout). El rol 'admin' SIGUE existiendo en BD (RLS) y se gestionará desde panel web aparte.
+- **Bloque 0 — Bugs críticos** ✅ B02 DateTimePicker (DateField + DateField.web ya estaban, MIN_BIRTH_DATE=1900) · B03 Cambio idioma efectivo (LanguageContext con useMemo + state + AsyncStorage).
+- **Bloque 1 — Login al 100%** ✅ Selector tipo cuenta dentro de register (Usuario→form actual, Farmacia→`/registro-farmacia`) · Bloqueo acceso si `Farmacias.activa=false` con pantalla "Cuenta en revisión" + logout.
+- **Bloque 2 — UX Usuario en mapa** ✅ Toggle "Con inventario" en header del bottom sheet, filtra pins+lista a las farmacias_osm vinculadas a una cuenta con producto disponible (`getFarmaciaIdsConInventario` join `inventario_sucursal` → sucursales).
+- **Bloque 3 — Cuentas internas farmacia** ✅ Tabla `cuentas_sucursal` + RPC `invitar_encargado_sucursal` + UI `app/farmacia/encargados.tsx`. La RPC NO toca rol/farmacia_id (existe trigger DB que solo deja a admin cambiar roles). El gating "encargado solo ve su sucursal" queda como deuda separada (~1-2 días).
+- **Bloque 4 — Tema oscuro/claro** ✅ `lib/ThemeContext.tsx` con persistencia AsyncStorage + toggle en perfil + StatusBar dinámico. El refactor visual completo de cada componente queda como deuda separada (~2-3 días).
 
-**Construido y verificado (Rol Farmacia):** Sucursales (CRUD) · Inventario por sucursal · Carga masiva CSV · Descuentos · Reservas+confirmar venta · Dashboard de ventas · Perfil de cuenta (nombre/logo) · Onboarding (5 estados + observaciones + reenviar + 3 docs RD) · **Tab dedicado "Mi Farmacia"** (Buscar/Mapa ocultos para farmacia, aterriza en su hub).
-APIs: `lib/api/{sucursales,inventario,descuentos,reservas,farmacias(getMiFarmacia/actualizarCuenta),solicitudes(reenviar/marcarEnRevision/solicitarObservaciones)}.ts`.
-Pantallas: `app/farmacia/{sucursales,inventario,carga-masiva,descuentos,reservas,metricas,cuenta}.tsx` + `app/(tabs)/farmacia.tsx` (hub).
+**Migraciones que el cliente CORRIÓ esta sesión:**
+- `20260609001900_farmacia_cuenta.sql` (mi_farmacia + actualizar_cuenta_farmacia)
+- `20260609000300_resenas_farmacias.sql` (Keriva Reviews)
+- `20260611000000_consentimiento_172_13.sql` (Ley 172-13)
+- RPC PostGIS `farmacias_cercanas` (radio 2km)
+- `sucursales.horarios jsonb` + función `sucursal_abierta_a`
+- `eventos`: enum extendido (`busqueda_sin_resultado`, `sin_disponibilidad`) + columna `metadata jsonb` + vista `v_demanda_insatisfecha`
+- `cuentas_sucursal` + RPC `invitar_encargado_sucursal`
 
-**Construido y verificado (puente Usuario):** en `app/detail.tsx` la sección **"Disponible cerca de ti"** usa `getSucursalesConProducto()` → sucursales con el producto disponible, ordenadas por cercanía, con **Reservar** + Cómo llegar. Loop completo probado: usuario reserva → farmacia confirma → métricas.
+⚠️ **Pendiente del cliente** que las migraciones ad-hoc (`_RUN_*.sql`) las consolidemos como migraciones versionadas formales antes del próximo despliegue (deuda técnica).
 
-**PENDIENTE (pulido Usuario + farmacia):**
-- [F] Adaptar el tab Perfil para farmacia (ocultar Mi familia/puntos/stats; mostrar datos de cuenta). ← se estaba haciendo, a medias.
-- [U] Buscar por principio activo / categoría + autocompletado.
-- [U] "Abierta ahora" (necesita horario estructurado por sucursal).
-- [U] Consentimiento de datos de salud (Ley 172-13).
-- [U] Captura de leads/eventos (tabla `eventos` ya existe) + demanda insatisfecha.
-- [U] #16 orden por cercanía 2km en el MAPA (ya codeado en map.tsx, sin verificar).
-- [U] GPS denegado → dirección manual; sin farmacias en 2km → ampliar radio; botón llamar.
-- [Login] exponer "Crear cuenta como Farmacia" + selector de tipo.
-- 2da etapa: Notificaciones (#45-48) + push OneSignal (requiere llave del cliente).
+### Pendientes que SÍ requieren al cliente (no se pueden hacer sin)
+
+**🟥 Llaves para activar features:**
+- OneSignal App ID + REST API Key + FCM Server Key → activa notificaciones push (Bloque 5 del plan, ~4h)
+- Catálogo de productos real o autorización DIGEMAPS → para beta con datos creíbles
+- Lista final de farmacias afiliadas con tels/horarios/lat-lng
+
+**🟧 Accesos para deploy:**
+- Panel DNS de `keriva.app` → para Vercel/Netlify
+- Google Play Console (editor) → APK preview
+- Apple Developer (si va iOS)
+
+**🟨 Decisiones de scope (sesiones separadas):**
+- Fase 6 Agente IA Anthropic → necesita 1 reunión scoping (alcance, disclaimers Ley 172-13 RD, modelo de cobro)
+- Admin web (proyecto aparte) → stack + alcance + auth
+- ¿Tema oscuro completo entra ahora o en otra fase?
+
+### Lo que sigue para mí (sin tocar al cliente)
+- **Bloque 6 — QA + Documentación** (~4-5h): plan de pruebas E2E con 3 cuentas, README actualizado, diagrama tablas/RLS, guía de despliegue (env vars, EAS, rollback).
+- Consolidar migraciones `_RUN_*.sql` en archivos versionados.
+- Resolver deudas: gating encargado, refactor visual dark mode.
 
 **Cuentas de prueba:** admin@keriva.do/KerivaAdmin2026! · farmacia@keriva.do/KerivaFarmacia2026! · usuario@keriva.do/KerivaUsuario2026!
-**Datos de prueba ya en DB:** sucursal principal de la farmacia con Metformina (RD$99.50) en inventario; reservas de prueba.
 
-**Cliente (reunión):** activar Google Maps key (Maps SDK Android + billing + SHA-1 `B5:D6:16:73:F3:C5:0F:FD:88:E2:03:12:F3:69:18:55:59:95:D9:E5` + paquete `app.keriva.farmacias`). APK preview: perfil EAS `preview`, build con `npm run build:preview` (token EXPO en sesión).
-
-**⚠️ Commit local en rama (sin push — el cliente aún no dio acceso de colaborador al repo).**
+**Datos de prueba:** sucursal principal de la farmacia con Metformina (RD$99.50) en inventario; sucursal `5550370d` vinculada a Farmacia Santa Lucía OSM (vínculo creado para smoke del toggle "Con inventario"); horarios 24/7 seteados en la sucursal de inventario; reservas de prueba; eventos de demanda insatisfecha sembrados (rivaroxaban x4, ozempic x3, Metformina sin disp x2, dapagliflozina x1).
 
 ---
 

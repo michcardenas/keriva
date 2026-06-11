@@ -163,6 +163,8 @@ export type SucursalDisponible = {
   telefono: string | null;
   whatsapp: string | null;
   precio: number | null;
+  /** U2: horario estructurado para el filtro "Abierta ahora". null si no configurado. */
+  horarios: import('@/lib/horarios').Horarios | null;
 };
 
 /**
@@ -171,11 +173,36 @@ export type SucursalDisponible = {
  * las sucursales cuelgan de ella. Ordenar por cercanía se hace en el cliente
  * con la ubicación del usuario.
  */
+/**
+ * M1: set de Farmacias (legacy bigint) que tienen al menos UNA sucursal con
+ * al menos un producto disponible. Sirve para filtrar el mapa al toggle
+ * "solo con inventario". Degrada a Set vacío si las tablas aún no existen.
+ */
+export async function getFarmaciaIdsConInventario(): Promise<Set<number>> {
+  const { data, error } = await supabase
+    .from('inventario_sucursal')
+    .select('sucursales!inner(farmacia_id, activa)')
+    .eq('disponible', true);
+  const out = new Set<number>();
+  if (error || !data) return out;
+  // Supabase puede devolver `sucursales` como objeto único o array según la
+  // configuración del join. Normalizamos a array y filtramos.
+  for (const row of data as any[]) {
+    const sucs = Array.isArray(row.sucursales) ? row.sucursales : row.sucursales ? [row.sucursales] : [];
+    for (const s of sucs) {
+      if (s?.activa && typeof s.farmacia_id === 'number') out.add(s.farmacia_id);
+    }
+  }
+  return out;
+}
+
 export async function getSucursalesConProducto(productoId: string): Promise<SucursalDisponible[]> {
   const { data, error } = await supabase
     .from('inventario_sucursal')
     .select(
-      'precio, sucursales!inner(id, farmacia_id, nombre, direccion, latitud, longitud, telefono, whatsapp, activa)',
+      // `horarios` (jsonb) puede no existir si la migración U2 no se ha
+      // corrido — el select degrada y los items quedan con horarios: null.
+      'precio, sucursales!inner(id, farmacia_id, nombre, direccion, latitud, longitud, telefono, whatsapp, horarios, activa)',
     )
     .eq('producto_id', productoId)
     .eq('disponible', true);
@@ -192,6 +219,7 @@ export async function getSucursalesConProducto(productoId: string): Promise<Sucu
       telefono: r.sucursales.telefono,
       whatsapp: r.sucursales.whatsapp,
       precio: toNum(r.precio),
+      horarios: r.sucursales.horarios ?? null,
     }));
 }
 

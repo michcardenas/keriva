@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, ScrollView, Linking, Platform } from 'react-native';
-import { ArrowLeft, MapPin, Map as MapIcon, Navigation, ShoppingBag, Check } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Map as MapIcon, Navigation, ShoppingBag, Check, Clock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
@@ -20,6 +20,8 @@ import PillBackground from '@/components/ui/PillBackground';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
 import { capture } from '@/lib/analytics';
+import { isOpenNow } from '@/lib/horarios';
+import { logSinDisponibilidad } from '@/lib/api/eventos';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -74,6 +76,9 @@ export default function DetailScreen() {
   const [sucursales, setSucursales] = useState<(SucursalDisponible & { distanceKm: number | null })[]>([]);
   const [reservando, setReservando] = useState<string | null>(null);
   const [reservadaEn, setReservadaEn] = useState<string | null>(null);
+  // U2: toggle "Abierta ahora" — solo aparece si al menos una sucursal tiene
+  // horarios estructurados (sino el filtro engañaría al usuario al ocultarlas).
+  const [onlyOpenNow, setOnlyOpenNow] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +111,12 @@ export default function DetailScreen() {
       }));
       withDist.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
       setSucursales(withDist);
+      // U4: si hay producto matcheado y ningún punto de venta, lo registramos
+      // como demanda insatisfecha (sin_disponibilidad). Útil para que el admin
+      // vea qué meds debería incentivar a tener en stock.
+      if (rows.length === 0) {
+        void logSinDisponibilidad(skuId, { medicamento: medication?.name ?? null });
+      }
     });
     return () => {
       cancelled = true;
@@ -298,16 +309,49 @@ export default function DetailScreen() {
         )}
 
         {/* Disponibilidad real por sucursal (farmacias aprobadas) */}
-        {skuId && sucursales.length > 0 && (
+        {skuId && sucursales.length > 0 && (() => {
+          const tieneHorarios = sucursales.some((s) => s.horarios !== null);
+          const filtradas = onlyOpenNow
+            ? sucursales.filter((s) => isOpenNow(s.horarios))
+            : sucursales;
+          return (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Disponible cerca de ti</Text>
-            {sucursales.map((s) => {
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Disponible cerca de ti</Text>
+              {tieneHorarios && (
+                <PressableScale
+                  style={[styles.openNowToggle, onlyOpenNow && styles.openNowToggleActive]}
+                  onPress={() => setOnlyOpenNow((v) => !v)}
+                  scaleTo={0.94}
+                >
+                  <Clock size={13} color={onlyOpenNow ? theme.colors.accentText : theme.colors.accent} />
+                  <Text style={[styles.openNowToggleText, onlyOpenNow && styles.openNowToggleTextActive]}>
+                    Abierta ahora
+                  </Text>
+                </PressableScale>
+              )}
+            </View>
+            {filtradas.length === 0 && (
+              <Text style={styles.emptyHint}>
+                Ninguna sucursal abierta ahora mismo. Quita el filtro para ver todas.
+              </Text>
+            )}
+            {filtradas.map((s) => {
               const reservada = reservadaEn === s.sucursalId;
+              const abierta = isOpenNow(s.horarios);
               return (
                 <View key={s.sucursalId} style={styles.dispCard}>
                   <View style={styles.dispHead}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.dispName} numberOfLines={1}>{s.nombre}</Text>
+                      <View style={styles.dispNameRow}>
+                        <Text style={styles.dispName} numberOfLines={1}>{s.nombre}</Text>
+                        {abierta && (
+                          <View style={styles.openBadge}>
+                            <View style={styles.openDot} />
+                            <Text style={styles.openBadgeText}>Abierta</Text>
+                          </View>
+                        )}
+                      </View>
                       <View style={styles.locationRow}>
                         <MapPin size={12} color={theme.colors.textSecondary} />
                         <Text style={styles.pharmacyBlockAddr} numberOfLines={1}>{s.direccion}</Text>
@@ -345,7 +389,8 @@ export default function DetailScreen() {
               );
             })}
           </View>
-        )}
+          );
+        })()}
 
         {/* Estado: no hay producto matcheado todavía */}
         {!skuId && (
@@ -623,6 +668,68 @@ const styles = StyleSheet.create({
     ...theme.text.h2,
     color: theme.colors.textPrimary,
     marginBottom: theme.spacing.md,
+  },
+  // U2 — "Abierta ahora"
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.md,
+  },
+  openNowToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    borderWidth: 1,
+    borderColor: theme.colors.accentSoft,
+  },
+  openNowToggleActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  openNowToggleText: {
+    fontFamily: theme.font.bodyBold,
+    fontSize: 12,
+    color: theme.colors.accent,
+  },
+  openNowToggleTextActive: {
+    color: theme.colors.accentText,
+  },
+  emptyHint: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic',
+    marginBottom: theme.spacing.md,
+  },
+  dispNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  openBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
+  },
+  openDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.accent,
+  },
+  openBadgeText: {
+    fontFamily: theme.font.bodyBold,
+    fontSize: 10,
+    color: theme.colors.accent,
   },
   pharmacyBlock: {
     marginBottom: theme.spacing.xs,

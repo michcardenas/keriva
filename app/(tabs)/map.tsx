@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { getActivePharmacies, getNearbyPharmacies, type PharmacyView } from '@/lib/api/farmacias';
 import { getRatingsForPharmacies, type FarmaciaRating } from '@/lib/api/reviews';
+import { getFarmaciaIdsConInventario } from '@/lib/api/inventario';
 import StarRating from '@/components/StarRating';
 import {
   searchMedications as searchMedsApi,
@@ -142,6 +143,17 @@ export default function MapScreen() {
   // Ubicación del usuario como estado (para reordenar resultados por cercanía).
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
   const userCoordsRef = useRef<[number, number]>(SANTIAGO_CENTER);
+  // U6: radio de búsqueda actual (2km → 5km → 10km al ampliar manualmente).
+  const [searchRadius, setSearchRadius] = useState(2000);
+  // U6: input de dirección manual cuando el GPS está denegado.
+  const [manualMode, setManualMode] = useState(false);
+  const [manualAddress, setManualAddress] = useState('');
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  // M1: toggle "solo con inventario disponible". Default off — el mapa muestra
+  // todas las farmacias geo-localizadas, no solo las afiliadas a Keriva.
+  const [onlyConInventario, setOnlyConInventario] = useState(false);
+  const [farmaciasConInventario, setFarmaciasConInventario] = useState<Set<number>>(new Set());
   // Bug 01: ref con las farmacias actuales para los handlers de click del cluster.
   const pharmaciesRef = useRef<PharmacyView[]>([]);
   useEffect(() => {
@@ -178,6 +190,45 @@ export default function MapScreen() {
     return arr.map((m, i) => ({ ...m, nearest: i === 0 }));
   }, [selectedMed, userLoc]);
 
+  // Re-carga las farmacias para una coord + radio dados. Reusable desde el
+  // arranque (auto-detección GPS) y desde la UI (ampliar radio 5/10km, fijar
+  // dirección manual U6).
+  const loadPharmacies = useCallback(
+    async (lat: number, lng: number, radiusM: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        let data: PharmacyView[];
+        try {
+          data = await getNearbyPharmacies(lat, lng, radiusM);
+          // Auto-ampliación solo en el radio inicial (2km). Cuando el usuario
+          // ya pidió 5/10km, respetamos su elección y mostramos exactamente
+          // eso (con el banner si hace falta).
+          if (radiusM === 2000 && data.length < 5) {
+            const wider = await getNearbyPharmacies(lat, lng, 5000);
+            if (wider.length > data.length) data = wider;
+          }
+        } catch {
+          data = await getActivePharmacies();
+        }
+        setPharmacies(data);
+        getRatingsForPharmacies(data.map((p) => p.id))
+          .then(setRatings)
+          .catch(() => {});
+      } catch (err) {
+        captureException(err, {
+          screen: 'map',
+          coords: [lng, lat] as [number, number],
+          radiusM,
+        });
+        setError(t.map.errorLoad);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
+
   // Load user location + pharmacies
   useEffect(() => {
     (async () => {
@@ -186,42 +237,67 @@ export default function MapScreen() {
       userCoordsRef.current = [loc.lng, loc.lat];
       setUserLoc({ lat: loc.lat, lng: loc.lng });
       setUsingApproxLocation(loc.isFallback);
-
-      try {
-        setError(null);
-        // Bug 01 (Capa 2): traer las farmacias dentro de 2 km del usuario.
-        // Fallback a 5 km si hay <5 resultados (zona poco cubierta). Si la RPC
-        // PostGIS aún no está aplicada, caemos a cargar todas (ya agrupadas
-        // por el clustering).
-        let data: PharmacyView[];
-        try {
-          data = await getNearbyPharmacies(loc.lat, loc.lng, 2000);
-          if (data.length < 5) {
-            const wider = await getNearbyPharmacies(loc.lat, loc.lng, 5000);
-            if (wider.length > data.length) data = wider;
-          }
-        } catch {
-          data = await getActivePharmacies();
-        }
-        setPharmacies(data);
-        // Cargar ratings en segundo plano (no bloquea el mapa; degrada a
-        // vacío si la migración de reseñas aún no se aplicó).
-        getRatingsForPharmacies(data.map((p) => p.id))
-          .then(setRatings)
-          .catch(() => {});
-      } catch (err) {
-        // Bug 04: reportar a Sentry antes de mostrar el toast al usuario.
-        captureException(err, {
-          screen: 'map',
-          coords: userCoordsRef.current,
-          usedFallback: loc.isFallback,
-        });
-        setError(t.map.errorLoad);
-      } finally {
-        setLoading(false);
-      }
+      await loadPharmacies(loc.lat, loc.lng, 2000);
+      // M1: precargar el set de farmacias con inventario en background.
+      getFarmaciaIdsConInventario().then(setFarmaciasConInventario).catch(() => {});
     })();
-  }, []);
+  }, [loadPharmacies]);
+
+  // M1: lista de farmacias filtrada por el toggle. Cuando el toggle está activo,
+  // solo dejamos pasar las que están vinculadas a una cuenta Keriva con stock.
+  const pharmaciesFiltradas = useMemo(() => {
+    if (!onlyConInventario) return pharmacies;
+    return pharmacies.filter(
+      (p) =>
+        typeof p.farmaciaIdLegacy === 'number' &&
+        farmaciasConInventario.has(p.farmaciaIdLegacy),
+    );
+  }, [pharmacies, onlyConInventario, farmaciasConInventario]);
+
+  // U6: ampliar radio (5km → 10km). Re-fetch con el nuevo radio.
+  const handleAmpliarRadio = useCallback(
+    async (radiusM: number) => {
+      setSearchRadius(radiusM);
+      const loc = userLoc ?? { lat: userCoordsRef.current[1], lng: userCoordsRef.current[0] };
+      await loadPharmacies(loc.lat, loc.lng, radiusM);
+    },
+    [loadPharmacies, userLoc],
+  );
+
+  // U6: geocodificar dirección manual (Google Geocoding). Devuelve a Santiago
+  // si la dirección no se reconoce. La key es la misma del mapa nativo Android.
+  const handleGeocodeManual = useCallback(async () => {
+    const q = manualAddress.trim();
+    if (!q) return;
+    setGeocoding(true);
+    setGeocodeError(null);
+    try {
+      const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ?? '';
+      // Añadimos "Dominican Republic" al query para sesgar el resultado a RD
+      // (sin esto, "Calle Duarte" matchea ciudades en muchos países).
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        `${q}, República Dominicana`,
+      )}&key=${key}`;
+      const r = await fetch(url);
+      const data = await r.json();
+      const result = data?.results?.[0];
+      if (!result?.geometry?.location) {
+        setGeocodeError('No encontramos esa dirección. Intenta con una más específica.');
+        return;
+      }
+      const { lat, lng } = result.geometry.location;
+      userCoordsRef.current = [lng, lat];
+      setUserLoc({ lat, lng });
+      setUsingApproxLocation(false);
+      setManualMode(false);
+      setSearchRadius(2000);
+      await loadPharmacies(lat, lng, 2000);
+    } catch {
+      setGeocodeError('No se pudo buscar la dirección. Intenta de nuevo.');
+    } finally {
+      setGeocoding(false);
+    }
+  }, [manualAddress, loadPharmacies]);
 
   // Init Mapbox map ONCE when the container div is available
   useEffect(() => {
@@ -283,14 +359,14 @@ export default function MapScreen() {
   // Bug 01 — Render con CLUSTERING nativo de Mapbox (GeoJSON source + capas),
   // en vez de un Marker DOM por farmacia (que con 839 pins era ilegible y lento).
   useEffect(() => {
-    if (!mapReady || !mapRef.current || pharmacies.length === 0) return;
+    if (!mapReady || !mapRef.current || pharmaciesFiltradas.length === 0) return;
     if (Platform.OS !== 'web') return;
 
     const mapboxgl = getMapboxGL();
     if (!mapboxgl) return;
     const map = mapRef.current;
 
-    const validPharmacies = pharmacies.filter((p) => p.latitude && p.longitude);
+    const validPharmacies = pharmaciesFiltradas.filter((p) => p.latitude && p.longitude);
 
     const geojson = {
       type: 'FeatureCollection',
@@ -727,10 +803,51 @@ export default function MapScreen() {
         </View>
       )}
 
-      {!error && !loading && usingApproxLocation && !selectedMed && (
-        <View style={[styles.infoBanner, { top: insets.top + 62 }]}>
+      {!error && !loading && usingApproxLocation && !selectedMed && !manualMode && (
+        <TouchableOpacity
+          style={[styles.infoBanner, { top: insets.top + 62 }]}
+          onPress={() => { setManualMode(true); setGeocodeError(null); }}
+          activeOpacity={0.8}
+        >
           <Navigation size={16} color="#106B4F" />
           <Text style={styles.infoText}>{t.map.approxLocation}</Text>
+          <Text style={styles.infoAction}>Cambiar</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* U6: input de dirección manual cuando el GPS está denegado. */}
+      {manualMode && (
+        <View style={[styles.manualBox, { top: insets.top + 62 }]}>
+          <View style={styles.manualRow}>
+            <Search size={16} color="#666" />
+            <TextInput
+              style={styles.manualInput}
+              value={manualAddress}
+              onChangeText={setManualAddress}
+              placeholder="Ej. Av. 27 de Febrero, Santiago"
+              placeholderTextColor="#999"
+              autoFocus
+              onSubmitEditing={handleGeocodeManual}
+              returnKeyType="search"
+            />
+            <TouchableOpacity onPress={() => { setManualMode(false); setGeocodeError(null); }} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+              <X size={18} color="#666" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.manualActions}>
+            <TouchableOpacity
+              style={[styles.manualBtn, geocoding && styles.manualBtnDisabled]}
+              onPress={handleGeocodeManual}
+              disabled={geocoding}
+            >
+              {geocoding ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.manualBtnText}>Buscar farmacias aquí</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {geocodeError && <Text style={styles.manualError}>{geocodeError}</Text>}
         </View>
       )}
 
@@ -743,7 +860,7 @@ export default function MapScreen() {
           />
         ) : (
           <PharmacyMapNative
-            pharmacies={pharmacies}
+            pharmacies={pharmaciesFiltradas}
             selected={selectedPharmacy}
             center={hasFocus ? [focusLng as number, focusLat as number] : userCoordsRef.current}
             onSelect={(pharm) => { setSelectedPharmacy(pharm); setSelectedMedMarker(null); }}
@@ -780,14 +897,46 @@ export default function MapScreen() {
               ? `${medMarkers.length} ${pharmWord(medMarkers.length)} ${t.map.medResultsWith} ${selectedMed.name}`
               : loading
               ? t.map.loadingShort
-              : `${pharmacies.length} ${pharmWord(pharmacies.length)}`}
+              : `${pharmaciesFiltradas.length} ${pharmWord(pharmaciesFiltradas.length)}`}
           </Text>
-          {selectedMed && (
+          {selectedMed ? (
             <TouchableOpacity onPress={clearMedSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.backAllLink}>{t.map.backToAll}</Text>
             </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.invToggle, onlyConInventario && styles.invToggleActive]}
+              onPress={() => setOnlyConInventario((v) => !v)}
+            >
+              <Pill size={12} color={onlyConInventario ? '#fff' : '#106B4F'} />
+              <Text style={[styles.invToggleText, onlyConInventario && styles.invToggleTextActive]}>
+                Con inventario
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
+
+        {/* U6: banner "ampliar radio" cuando no hay farmacias en el radio actual.
+            Solo en el modo lista (sin medicamento seleccionado). */}
+        {!loading && !selectedMed && pharmaciesFiltradas.length === 0 && (
+          <View style={styles.widenBanner}>
+            <AlertCircle size={18} color="#D97706" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.widenTitle}>Sin farmacias en {Math.round(searchRadius / 1000)} km</Text>
+              <Text style={styles.widenText}>Amplía el radio de búsqueda:</Text>
+            </View>
+            {searchRadius < 5000 && (
+              <TouchableOpacity style={styles.widenBtn} onPress={() => handleAmpliarRadio(5000)}>
+                <Text style={styles.widenBtnText}>5 km</Text>
+              </TouchableOpacity>
+            )}
+            {searchRadius < 10000 && (
+              <TouchableOpacity style={styles.widenBtn} onPress={() => handleAmpliarRadio(10000)}>
+                <Text style={styles.widenBtnText}>10 km</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Buscador de farmacia (solo en modo lista completa) */}
         {!selectedMed && (
@@ -943,10 +1092,30 @@ export default function MapScreen() {
               <Clock size={16} color="#666" />
               <Text style={styles.detailText}>{selectedPharmacy.hours}</Text>
             </View>
-            <View style={styles.detailRow}>
-              <Phone size={16} color="#666" />
-              <Text style={styles.detailText}>{selectedPharmacy.phone}</Text>
-            </View>
+            {(() => {
+              // U6: botón Llamar — solo si el teléfono parece un número real.
+              const raw = selectedPharmacy.phone ?? '';
+              const cleaned = raw.replace(/[^\d+]/g, '');
+              const isReal = cleaned.length >= 7 && raw !== 'No disponible';
+              if (!isReal) {
+                return (
+                  <View style={styles.detailRow}>
+                    <Phone size={16} color="#666" />
+                    <Text style={styles.detailText}>{raw}</Text>
+                  </View>
+                );
+              }
+              return (
+                <TouchableOpacity
+                  style={styles.detailRow}
+                  onPress={() => Linking.openURL(`tel:${cleaned}`).catch(() => {})}
+                >
+                  <Phone size={16} color="#106B4F" />
+                  <Text style={[styles.detailText, styles.detailTextLink]}>{raw}</Text>
+                  <Text style={styles.callBadge}>Llamar</Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
 
           {/* Keriva Reviews — calificación + acceso a reseñas */}
@@ -1203,6 +1372,107 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   infoText: { fontFamily: 'DMSans-Medium', fontSize: 12, color: '#106B4F', flex: 1 },
+  infoAction: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#106B4F', textDecorationLine: 'underline' },
+
+  // U6 — Input dirección manual cuando el GPS está denegado.
+  manualBox: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 14,
+    gap: 10,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  manualRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    height: 44,
+    borderRadius: 10,
+  },
+  manualInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#111' },
+  manualActions: { flexDirection: 'row', justifyContent: 'flex-end' },
+  manualBtn: {
+    backgroundColor: '#106B4F',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  manualBtnDisabled: { opacity: 0.6 },
+  manualBtnText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#fff' },
+  manualError: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#DC2626', textAlign: 'center' },
+
+  // M1 — Toggle "solo con inventario disponible"
+  invToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1.2,
+    borderColor: '#106B4F',
+    backgroundColor: '#E8F5E9',
+  },
+  invToggleActive: {
+    backgroundColor: '#106B4F',
+  },
+  invToggleText: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 11,
+    color: '#106B4F',
+  },
+  invToggleTextActive: {
+    color: '#fff',
+  },
+
+  // U6 — Banner "ampliar radio" cuando no hay farmacias en el radio actual.
+  widenBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  widenTitle: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#92400E' },
+  widenText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#92400E' },
+  widenBtn: {
+    backgroundColor: '#D97706',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  widenBtnText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#fff' },
+
+  // U6 — fila de teléfono clickeable con badge "Llamar".
+  detailTextLink: { color: '#106B4F', textDecorationLine: 'underline' },
+  callBadge: {
+    fontFamily: 'DMSans-Bold',
+    fontSize: 11,
+    color: '#106B4F',
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
   mapWrapper: { flex: 1, position: 'relative' },
   nativePin: {
     width: 40,

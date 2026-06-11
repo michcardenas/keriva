@@ -9,12 +9,14 @@ import {
   Clock,
   Camera as CameraIcon,
   Store,
-  UserCog,
   Users,
   ChevronRight,
   Pencil,
   Plus,
+  Moon,
+  Sun,
 } from 'lucide-react-native';
+import { useColorMode } from '@/lib/ThemeContext';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
@@ -30,6 +32,9 @@ import {
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import type { Rol } from '@/lib/api/perfiles';
 import { getMySolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
+import { getMiFarmacia, type FarmaciaCuenta } from '@/lib/api/farmacias';
+import { getSucursales } from '@/lib/api/sucursales';
+import { getReservasFarmacia } from '@/lib/api/reservas';
 import LanguageSelector from '@/components/LanguageSelector';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
@@ -44,7 +49,6 @@ const ROL_COLORS: Record<Rol, { bg: string; text: string }> = {
 };
 
 function RolIcon({ rol }: { rol: Rol }) {
-  if (rol === 'admin') return <UserCog size={14} color={ROL_COLORS.admin.text} />;
   if (rol === 'farmacia') return <Store size={14} color={ROL_COLORS.farmacia.text} />;
   return <Award size={14} color={ROL_COLORS.usuario.text} />;
 }
@@ -65,12 +69,9 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { user, perfil, session, refreshPerfil } = useAuth();
+  const { mode, toggle: toggleColorMode } = useColorMode();
   const rolLabel = (r: Rol) =>
-    r === 'admin'
-      ? t.profile.roleAdmin
-      : r === 'farmacia'
-      ? t.profile.rolePharmacy
-      : t.profile.roleUser;
+    r === 'farmacia' ? t.profile.rolePharmacy : t.profile.roleUser;
   const [reports, setReports] = useState<MyReport[]>([]);
   const [stats, setStats] = useState({ totalReports: 0, verifiedReports: 0, pendingReports: 0 });
   const [points, setPoints] = useState(0);
@@ -78,29 +79,49 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [solicitud, setSolicitud] = useState<SolicitudFarmacia | null>(null);
+  const [miFarmacia, setMiFarmacia] = useState<FarmaciaCuenta | null>(null);
+  const [farmaciaStats, setFarmaciaStats] = useState({ sucursales: 0, pendientes: 0, confirmadas: 0 });
 
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
       setDataError(null);
-      const [r, s, p, ph, sol] = await Promise.all([
-        getMyReports(user.id, 20),
-        getMyStats(user.id),
-        getMyPoints(user.id),
-        getMyPointsHistory(user.id),
-        getMySolicitud(user.id),
-      ]);
-      setReports(r);
-      setStats(s);
-      setPoints(p);
-      setPointsHistory(ph);
-      setSolicitud(sol);
+      // Para rol=farmacia no traemos puntos/reportes/familia: la vista no los
+      // muestra y son llamadas innecesarias.
+      if (perfil?.rol === 'farmacia') {
+        const farmaciaId = perfil.farmaciaId;
+        const [f, sucs, pend, conf] = await Promise.all([
+          getMiFarmacia(),
+          farmaciaId ? getSucursales(farmaciaId) : Promise.resolve([]),
+          getReservasFarmacia('pendiente'),
+          getReservasFarmacia('confirmada'),
+        ]);
+        setMiFarmacia(f);
+        setFarmaciaStats({
+          sucursales: sucs.length,
+          pendientes: pend.length,
+          confirmadas: conf.length,
+        });
+      } else {
+        const [r, s, p, ph, sol] = await Promise.all([
+          getMyReports(user.id, 20),
+          getMyStats(user.id),
+          getMyPoints(user.id),
+          getMyPointsHistory(user.id),
+          getMySolicitud(user.id),
+        ]);
+        setReports(r);
+        setStats(s);
+        setPoints(p);
+        setPointsHistory(ph);
+        setSolicitud(sol);
+      }
     } catch {
       setDataError(t.profile.dataError);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, perfil?.rol]);
 
   useEffect(() => {
     loadData();
@@ -137,6 +158,166 @@ export default function ProfileScreen() {
   const displayEmail = perfil?.email ?? user?.email ?? '';
   const rol: Rol = perfil?.rol ?? 'usuario';
   const rolColors = ROL_COLORS[rol];
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Vista del rol FARMACIA: oculta Mi familia / puntos / stats / reportes
+  // y muestra la cuenta de la marca + atajos a Mi Farmacia y al editor.
+  // ─────────────────────────────────────────────────────────────────────
+  if (rol === 'farmacia') {
+    const farmaciaNombre = miFarmacia?.nombre ?? displayName;
+    return (
+      <View style={styles.container}>
+        <PillBackground />
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.topBar}>
+            <PressableScale
+              style={styles.backButton}
+              onPress={() => router.push('/(tabs)/farmacia')}
+              scaleTo={0.9}
+            >
+              <ArrowLeft size={22} color={theme.colors.textPrimary} />
+            </PressableScale>
+            <View style={styles.topBarActions}>
+              <LanguageSelector />
+              <PressableScale style={styles.logoutButton} onPress={handleLogout} scaleTo={0.9}>
+                <LogOut size={20} color={theme.colors.danger} />
+              </PressableScale>
+            </View>
+          </View>
+
+          <Reveal variant="up" delay={40}>
+            <View style={styles.profileCard}>
+              <View style={styles.avatar}>
+                {miFarmacia?.logoUrl ? (
+                  <Image source={{ uri: miFarmacia.logoUrl }} style={styles.avatarPhoto} />
+                ) : (
+                  <Text style={styles.avatarInitials}>{getInitials(farmaciaNombre)}</Text>
+                )}
+                <View style={styles.avatarLogoBadge}>
+                  <Store size={16} color={theme.colors.surface} />
+                </View>
+              </View>
+              <Text style={styles.userName} numberOfLines={1}>{farmaciaNombre}</Text>
+              <Text style={styles.userEmail} numberOfLines={1}>{displayEmail}</Text>
+              <View style={[styles.rolBadge, { backgroundColor: rolColors.bg }]}>
+                <RolIcon rol={rol} />
+                <Text style={[styles.rolBadgeText, { color: rolColors.text }]}>
+                  {rolLabel(rol)}
+                </Text>
+              </View>
+            </View>
+          </Reveal>
+
+          {dataError && (
+            <Reveal variant="fade">
+              <PressableScale style={styles.errorBanner} onPress={loadData}>
+                <Text style={styles.errorBannerText}>{dataError}</Text>
+                <Text style={styles.errorBannerRetry}>{t.profile.retry}</Text>
+              </PressableScale>
+            </Reveal>
+          )}
+
+          {/* Card destacada: reservas pendientes (acción directa). */}
+          <Reveal variant="up" delay={100}>
+            <PressableScale
+              style={styles.pointsCard}
+              onPress={() => router.push('/farmacia/reservas')}
+              scaleTo={0.98}
+            >
+              <View style={styles.pharmacyHeroBubble}>
+                <Clock size={28} color={theme.colors.warning} />
+              </View>
+              <View style={styles.pointsInfo}>
+                <Text style={styles.pointsLabel}>Reservas pendientes</Text>
+                <Text style={styles.pharmacyHeroValue}>
+                  {farmaciaStats.pendientes.toLocaleString('es-DO')}
+                </Text>
+              </View>
+              <View style={styles.pointsGiftBubble}>
+                <ChevronRight size={20} color={theme.colors.warning} />
+              </View>
+            </PressableScale>
+          </Reveal>
+
+          {/* Stats grid: Sucursales / Pendientes / Ventas confirmadas. */}
+          <View style={styles.statsGrid}>
+            <Reveal style={styles.statCardWrap} index={0} delay={160}>
+              <View style={styles.statCard}>
+                <View style={styles.statIconBubble}>
+                  <Store size={20} color={theme.colors.accent} />
+                </View>
+                <Text style={styles.statValue}>{farmaciaStats.sucursales}</Text>
+                <Text style={styles.statLabel}>Sucursales</Text>
+              </View>
+            </Reveal>
+            <Reveal style={styles.statCardWrap} index={1} delay={160}>
+              <View style={styles.statCard}>
+                <View style={styles.statIconBubbleWarning}>
+                  <Clock size={20} color={theme.colors.warning} />
+                </View>
+                <Text style={styles.statValue}>{farmaciaStats.pendientes}</Text>
+                <Text style={styles.statLabel}>Pendientes</Text>
+              </View>
+            </Reveal>
+            <Reveal style={styles.statCardWrap} index={2} delay={160}>
+              <View style={styles.statCard}>
+                <View style={styles.statIconBubble}>
+                  <ShieldCheck size={20} color={theme.colors.accent} />
+                </View>
+                <Text style={styles.statValue}>{farmaciaStats.confirmadas}</Text>
+                <Text style={styles.statLabel}>Ventas</Text>
+              </View>
+            </Reveal>
+          </View>
+
+          <Reveal variant="up" delay={220}>
+            <PressableScale
+              style={styles.farmaciaCta}
+              onPress={() => router.push('/farmacia/cuenta')}
+            >
+              <View style={styles.ctaIconBubble}>
+                <Pencil size={22} color={theme.colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.ctaTitle}>Editar perfil de la cuenta</Text>
+                <Text style={styles.ctaText}>Cambia el nombre comercial y el logo de tu marca.</Text>
+              </View>
+              <ChevronRight size={20} color={theme.colors.accent} />
+            </PressableScale>
+          </Reveal>
+
+          <Reveal variant="up" delay={260}>
+            <PressableScale
+              style={styles.familiaCta}
+              onPress={() => router.push('/(tabs)/farmacia')}
+            >
+              <View style={styles.ctaIconBubble}>
+                <Store size={22} color={theme.colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.ctaTitle}>Mi Farmacia</Text>
+                <Text style={styles.ctaText}>
+                  Sucursales, inventario, reservas y métricas.
+                </Text>
+              </View>
+              <ChevronRight size={20} color={theme.colors.accent} />
+            </PressableScale>
+          </Reveal>
+
+          <View style={styles.roleBannerOrange}>
+            <Store size={20} color={theme.colors.warning} />
+            <Text style={styles.roleBannerTextOrange}>{t.profile.pharmacyBanner}</Text>
+          </View>
+
+          <View style={styles.footerSpace} />
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -456,21 +637,33 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {rol === 'admin' && (
-          <View style={styles.roleBanner}>
-            <UserCog size={20} color={theme.colors.info} />
-            <Text style={styles.roleBannerText}>{t.profile.adminBanner}</Text>
-          </View>
-        )}
+        {/* T1: toggle tema oscuro/claro persistente */}
+        <Reveal variant="up" delay={260}>
+          <PressableScale style={styles.themeCta} onPress={toggleColorMode}>
+            <View style={styles.ctaIconBubble}>
+              {mode === 'dark' ? (
+                <Sun size={22} color={theme.colors.accent} />
+              ) : (
+                <Moon size={22} color={theme.colors.accent} />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ctaTitle}>
+                {mode === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+              </Text>
+              <Text style={styles.ctaText}>
+                {mode === 'dark'
+                  ? 'Volver al tema con fondo blanco.'
+                  : 'Cambia a un fondo oscuro con verde neón.'}
+              </Text>
+            </View>
+            <ChevronRight size={20} color={theme.colors.accent} />
+          </PressableScale>
+        </Reveal>
 
-        {rol === 'farmacia' && (
-          <View style={styles.roleBannerOrange}>
-            <Store size={20} color={theme.colors.warning} />
-            <Text style={styles.roleBannerTextOrange}>{t.profile.pharmacyBanner}</Text>
-          </View>
-        )}
-
-        {/* La gestión de farmacia vive ahora en el tab "Mi Farmacia". */}
+        {/* La gestión de farmacia vive en el tab "Mi Farmacia" y en su propia
+            rama de este componente (early return arriba). El rol admin se
+            gestiona desde el panel web aparte, no desde la app móvil. */}
 
         <View style={styles.footerSpace} />
       </ScrollView>
@@ -677,6 +870,16 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     ...theme.shadow.card,
   },
+  themeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    marginTop: theme.spacing.lg,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    ...theme.shadow.card,
+  },
   ctaIconBubble: {
     width: 48,
     height: 48,
@@ -754,6 +957,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 2,
+  },
+  statIconBubbleWarning: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  pharmacyHeroBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pharmacyHeroValue: {
+    fontFamily: theme.font.bold,
+    fontSize: 28,
+    color: theme.colors.warning,
+    marginTop: 2,
   },
   statValue: {
     fontFamily: theme.font.bold,

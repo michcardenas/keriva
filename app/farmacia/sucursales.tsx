@@ -9,7 +9,7 @@ import {
   Switch,
   Modal,
 } from 'react-native';
-import { ArrowLeft, Plus, Store, MapPin, Phone, Clock, Pencil, Trash2, X, Crosshair, Upload, Tag } from 'lucide-react-native';
+import { ArrowLeft, Plus, Store, MapPin, Phone, Clock, Pencil, Trash2, X, Crosshair, Upload, Tag, Users } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
@@ -232,6 +232,24 @@ export default function SucursalesScreen() {
                       style={styles.invBtn}
                     >
                       <Text style={styles.invBtnText}>Inventario</Text>
+                    </PressableScale>
+                    <PressableScale
+                      onPress={() => router.push({
+                        pathname: '/farmacia/horarios' as any,
+                        params: { sucursalId: s.id, nombre: s.nombre },
+                      })}
+                      style={styles.actionBtn}
+                    >
+                      <Clock size={16} color={theme.colors.accent} />
+                    </PressableScale>
+                    <PressableScale
+                      onPress={() => router.push({
+                        pathname: '/farmacia/encargados' as any,
+                        params: { sucursalId: s.id, nombre: s.nombre },
+                      })}
+                      style={styles.actionBtn}
+                    >
+                      <Users size={16} color={theme.colors.accent} />
                     </PressableScale>
                     <PressableScale onPress={() => openEdit(s)} style={styles.actionBtn}>
                       <Pencil size={16} color={theme.colors.accent} />

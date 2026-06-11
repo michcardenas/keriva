@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, Eye, EyeOff, Store } from 'lucide-react-native';
 import { signInWithEmail } from '@/lib/api/auth';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
@@ -163,7 +163,18 @@ export default function LoginScreen() {
             </PressableScale>
           </Reveal>
 
-          <Reveal index={7} delay={350}>
+          <Reveal index={7} delay={340}>
+            <PressableScale
+              style={styles.pharmacyButton}
+              onPress={() => router.push('/registro-farmacia')}
+              disabled={loading}
+            >
+              <Store size={18} color={theme.colors.warning} />
+              <Text style={styles.pharmacyButtonText}>Crear cuenta como Farmacia</Text>
+            </PressableScale>
+          </Reveal>
+
+          <Reveal index={8} delay={370}>
             <PressableScale
               style={styles.exploreLink}
               onPress={() => router.replace('/(tabs)')}
@@ -300,6 +311,22 @@ const styles = StyleSheet.create({
     fontFamily: theme.font.bold,
     fontSize: 15,
     color: theme.colors.accent,
+  },
+  pharmacyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    borderWidth: 2,
+    borderColor: theme.colors.warning,
+    borderRadius: theme.radius.pill,
+    height: 52,
+    backgroundColor: theme.colors.warningSoft,
+  },
+  pharmacyButtonText: {
+    fontFamily: theme.font.bold,
+    fontSize: 15,
+    color: theme.colors.warning,
   },
   exploreLink: {
     alignItems: 'center',

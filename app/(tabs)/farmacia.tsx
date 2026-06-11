@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Store, Upload, Tag, ShoppingBag, TrendingUp, ChevronRight, Settings } from 'lucide-react-native';
+import { Store, Upload, Tag, ShoppingBag, TrendingUp, ChevronRight, Settings, LogOut, AlertOctagon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
@@ -10,6 +10,8 @@ import PillBackground from '@/components/ui/PillBackground';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import { getSucursales } from '@/lib/api/sucursales';
 import { getReservasFarmacia } from '@/lib/api/reservas';
+import { getMiFarmaciaActiva } from '@/lib/api/farmacias';
+import { signOut } from '@/lib/api/auth';
 
 type Card = {
   key: string;
@@ -37,16 +39,25 @@ export default function FarmaciaHubScreen() {
 
   const [numSucursales, setNumSucursales] = useState<number | null>(null);
   const [numPendientes, setNumPendientes] = useState<number | null>(null);
+  // L2: estado de gating. null = aún cargando, true = activa, false = bloqueada.
+  const [activa, setActiva] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     if (!farmaciaId) return;
-    const [suc, pend] = await Promise.all([
+    const [suc, pend, esActiva] = await Promise.all([
       getSucursales(farmaciaId),
       getReservasFarmacia('pendiente'),
+      getMiFarmaciaActiva(farmaciaId),
     ]);
     setNumSucursales(suc.length);
     setNumPendientes(pend.length);
+    setActiva(esActiva);
   }, [farmaciaId]);
+
+  async function handleLogout() {
+    await signOut();
+    router.replace('/auth/login');
+  }
 
   useEffect(() => {
     load();
@@ -67,6 +78,28 @@ export default function FarmaciaHubScreen() {
         <PillBackground opacity={0.55} />
         <Store size={40} color={theme.colors.textMuted} />
         <Text style={styles.muted}>Esta sección es para cuentas de farmacia.</Text>
+      </View>
+    );
+  }
+
+  // L2: gating por estado. Si la farmacia fue desactivada (Farmacias.activa=false),
+  // no le dejamos gestionar nada. Mensaje claro + logout.
+  if (activa === false) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top, paddingHorizontal: theme.spacing.xl }]}>
+        <PillBackground opacity={0.55} />
+        <View style={styles.blockBubble}>
+          <AlertOctagon size={48} color={theme.colors.warning} />
+        </View>
+        <Text style={styles.blockTitle}>Cuenta en revisión</Text>
+        <Text style={styles.blockText}>
+          Tu cuenta de farmacia no está activa por el momento. Si crees que es un error,
+          contacta al equipo de Keriva o revisa tu correo para más información.
+        </Text>
+        <PressableScale style={styles.blockBtn} onPress={handleLogout}>
+          <LogOut size={18} color={theme.colors.accentText} />
+          <Text style={styles.blockBtnText}>Cerrar sesión</Text>
+        </PressableScale>
       </View>
     );
   }
@@ -111,6 +144,42 @@ export default function FarmaciaHubScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
   center: { alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
+  // L2 — pantalla de cuenta bloqueada
+  blockBubble: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: theme.colors.warningSoft,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  blockTitle: {
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  blockText: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.md,
+  },
+  blockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    ...theme.shadow.accent,
+  },
+  blockBtnText: {
+    fontFamily: theme.font.bold,
+    fontSize: 14,
+    color: theme.colors.accentText,
+  },
   muted: { ...theme.text.body, color: theme.colors.textSecondary, textAlign: 'center', paddingHorizontal: theme.spacing.xl },
   title: { ...theme.text.h1, color: theme.colors.textPrimary, marginTop: theme.spacing.sm },
   subtitle: { ...theme.text.body, color: theme.colors.textSecondary, marginTop: 2 },
