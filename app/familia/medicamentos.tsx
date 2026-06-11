@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   TextInput,
   ActivityIndicator,
@@ -11,7 +10,6 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   ArrowLeft,
@@ -30,7 +28,6 @@ import DisclaimerModal from '@/components/DisclaimerModal';
 import { getPerfilFamilia, type KerivaPerfil } from '@/lib/api/familia';
 import {
   addMedicamento,
-  labelFrecuencia,
   listMedicamentosByPerfil,
   softDeleteMedicamento,
   FRECUENCIA_OPTIONS,
@@ -42,6 +39,12 @@ import {
   type ProductoPediatrico,
 } from '@/lib/api/dosis';
 import { hasActiveDisclaimer } from '@/lib/api/disclaimer';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 function webConfirm(message: string): boolean {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -52,7 +55,33 @@ function webConfirm(message: string): boolean {
 
 export default function MedicamentosScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { session } = useAuth();
+
+  // Etiquetas de frecuencia traducidas (los helpers de care.ts son data-layer
+  // y no pueden usar el hook de idioma, así que se resuelven aquí).
+  const freqOptLabel = (key: FrecuenciaTipo) =>
+    key === 'diaria'
+      ? t.familia.freqDaily
+      : key === 'horas'
+      ? t.familia.freqHoursOpt
+      : t.familia.freqWeekly;
+  const freqText = (tipo: FrecuenciaTipo, valor: number | null) => {
+    if (tipo === 'diaria') {
+      return !valor || valor === 1
+        ? t.familia.freqOncePerDay
+        : t.familia.freqTimesPerDay.replace('{n}', String(valor));
+    }
+    if (tipo === 'horas') {
+      return t.familia.freqEveryHours.replace('{n}', String(valor ?? '?'));
+    }
+    if (tipo === 'semanal') {
+      return !valor || valor === 1
+        ? t.familia.freqOncePerWeek
+        : t.familia.freqTimesPerWeek.replace('{n}', String(valor));
+    }
+    return '';
+  };
   const params = useLocalSearchParams<{ perfilId?: string }>();
   const perfilId = typeof params.perfilId === 'string' ? params.perfilId : undefined;
 
@@ -65,6 +94,8 @@ export default function MedicamentosScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [productos, setProductos] = useState<ProductoPediatrico[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [valorFocused, setValorFocused] = useState(false);
   const [selectedProd, setSelectedProd] = useState<ProductoPediatrico | null>(null);
   const [frecuenciaTipo, setFrecuenciaTipo] = useState<FrecuenciaTipo>('diaria');
   const [frecuenciaValor, setFrecuenciaValor] = useState('1');
@@ -94,11 +125,11 @@ export default function MedicamentosScreen() {
         setNeedsDisclaimer(false);
       }
     } catch (e: any) {
-      setError(e?.message ?? 'No se pudo cargar');
+      setError(e?.message ?? t.familia.loadGenericError);
     } finally {
       setLoading(false);
     }
-  }, [perfilId]);
+  }, [perfilId, t]);
 
   useEffect(() => {
     if (session && perfilId) load();
@@ -164,7 +195,7 @@ export default function MedicamentosScreen() {
         horasToma: [],
       });
       if (!res.ok) {
-        Alert.alert('Error', res.error ?? 'No se pudo agregar');
+        Alert.alert(t.familia.errorTitle, res.error ?? t.familia.addError);
         return;
       }
       setAddOpen(false);
@@ -176,11 +207,11 @@ export default function MedicamentosScreen() {
 
   const handleDelete = useCallback(
     (med: CareMedicamentoWithProducto) => {
-      const msg = `¿Eliminar ${med.nombreDisplay}? Dejarás de recibir recordatorios.`;
+      const msg = t.familia.deleteMedConfirm.replace('{name}', med.nombreDisplay);
       const proceed = async () => {
         const res = await softDeleteMedicamento(med.id);
         if (!res.ok) {
-          Alert.alert('Error', res.error ?? 'No se pudo eliminar');
+          Alert.alert(t.familia.errorTitle, res.error ?? t.familia.deleteError);
           return;
         }
         await load();
@@ -188,121 +219,129 @@ export default function MedicamentosScreen() {
       if (Platform.OS === 'web') {
         if (webConfirm(msg)) proceed();
       } else {
-        Alert.alert('Eliminar medicamento', msg, [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Eliminar', style: 'destructive', onPress: proceed },
+        Alert.alert(t.familia.deleteMedTitle, msg, [
+          { text: t.familia.cancel, style: 'cancel' },
+          { text: t.familia.delete, style: 'destructive', onPress: proceed },
         ]);
       }
     },
-    [load],
+    [load, t],
   );
 
   const tituloHeader = useMemo(() => {
-    if (!perfil) return 'Medicamentos';
-    return `Medicamentos · ${perfil.nombre}`;
-  }, [perfil]);
+    if (!perfil) return t.familia.medsTitle;
+    return `${t.familia.medsTitle} · ${perfil.nombre}`;
+  }, [perfil, t]);
 
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Lock size={48} color="#34C26A" />}
-        title="Inicia sesión"
-        description="Necesitas iniciar sesión para gestionar medicamentos."
+        icon={<Lock size={48} color={theme.colors.accent} />}
+        title={t.familia.authTitleShort}
+        description={t.familia.medsAuthDesc}
       />
     );
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+          <ArrowLeft size={22} color={theme.colors.textPrimary} />
+        </PressableScale>
 
-        <View style={styles.header}>
-          <View style={styles.heroIcon}>
-            <Pill size={28} color="#34C26A" />
+        <Reveal variant="up" delay={60}>
+          <View style={styles.header}>
+            <View style={styles.heroIcon}>
+              <Pill size={28} color={theme.colors.accent} />
+            </View>
+            <Text style={styles.title}>{tituloHeader}</Text>
+            <Text style={styles.subtitle}>{t.familia.medsSubtitle}</Text>
           </View>
-          <Text style={styles.title}>{tituloHeader}</Text>
-          <Text style={styles.subtitle}>
-            Medicamentos crónicos para que Keriva te recuerde la toma a la hora indicada.
-          </Text>
-        </View>
+        </Reveal>
 
         {loading ? (
-          <ActivityIndicator color="#34C26A" style={{ marginTop: 40 }} />
+          <ActivityIndicator color={theme.colors.accent} style={{ marginTop: theme.spacing.huge }} />
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
         ) : !perfil ? (
-          <Text style={styles.errorText}>Perfil no encontrado</Text>
+          <Text style={styles.errorText}>{t.familia.profileNotFound}</Text>
         ) : (
           <>
             {perfil.tipoPerfil === 'dependiente_pediatrico' && (
-              <View
-                style={[
-                  styles.legalBanner,
-                  needsDisclaimer ? styles.legalBannerPending : styles.legalBannerOk,
-                ]}
-              >
-                <ShieldCheck
-                  size={16}
-                  color={needsDisclaimer ? '#E65100' : '#106B4F'}
-                />
-                <Text
+              <Reveal variant="fade" delay={120}>
+                <View
                   style={[
-                    styles.legalBannerText,
-                    { color: needsDisclaimer ? '#E65100' : '#106B4F' },
+                    styles.legalBanner,
+                    needsDisclaimer ? styles.legalBannerPending : styles.legalBannerOk,
                   ]}
                 >
-                  {needsDisclaimer
-                    ? 'Antes de agregar medicamentos para un perfil pediátrico debes aceptar el aviso médico.'
-                    : 'Aviso médico aceptado (kids_v1.0)'}
-                </Text>
-              </View>
+                  <ShieldCheck
+                    size={16}
+                    color={needsDisclaimer ? theme.colors.warning : theme.colors.accent}
+                  />
+                  <Text
+                    style={[
+                      styles.legalBannerText,
+                      { color: needsDisclaimer ? theme.colors.warning : theme.colors.accent },
+                    ]}
+                  >
+                    {needsDisclaimer
+                      ? t.familia.disclaimerNeeded
+                      : t.familia.disclaimerAcceptedV1}
+                  </Text>
+                </View>
+              </Reveal>
             )}
 
             {meds.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>💊</Text>
-                <Text style={styles.emptyTitle}>Sin medicamentos aún</Text>
-                <Text style={styles.emptyText}>
-                  Agrega el primer medicamento para empezar a recibir recordatorios.
-                </Text>
-              </View>
-            ) : (
-              meds.map((m) => (
-                <View key={m.id} style={styles.medCard}>
-                  <View style={styles.medCardLeft}>
-                    <Pill size={20} color="#34C26A" />
-                  </View>
-                  <View style={styles.medCardMain}>
-                    <Text style={styles.medName}>{m.nombreDisplay}</Text>
-                    {m.productoPresentacion ? (
-                      <Text style={styles.medPresentacion}>
-                        {m.productoPresentacion}
-                      </Text>
-                    ) : null}
-                    <View style={styles.medMetaRow}>
-                      <Clock size={12} color="rgba(255,255,255,0.6)" />
-                      <Text style={styles.medMetaText}>
-                        {labelFrecuencia(m.frecuenciaTipo, m.frecuenciaValor)}
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDelete(m)}
-                  >
-                    <Trash2 size={16} color="#FF6B6B" />
-                  </TouchableOpacity>
+              <Reveal variant="up" delay={140}>
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyEmoji}>💊</Text>
+                  <Text style={styles.emptyTitle}>{t.familia.noMedsTitle}</Text>
+                  <Text style={styles.emptyText}>{t.familia.noMedsText}</Text>
                 </View>
+              </Reveal>
+            ) : (
+              meds.map((m, i) => (
+                <Reveal key={m.id} index={i} delay={140}>
+                  <View style={styles.medCard}>
+                    <View style={styles.medCardLeft}>
+                      <Pill size={20} color={theme.colors.accent} />
+                    </View>
+                    <View style={styles.medCardMain}>
+                      <Text style={styles.medName}>{m.nombreDisplay}</Text>
+                      {m.productoPresentacion ? (
+                        <Text style={styles.medPresentacion}>
+                          {m.productoPresentacion}
+                        </Text>
+                      ) : null}
+                      <View style={styles.medMetaRow}>
+                        <Clock size={12} color={theme.colors.textSecondary} />
+                        <Text style={styles.medMetaText}>
+                          {freqText(m.frecuenciaTipo, m.frecuenciaValor)}
+                        </Text>
+                      </View>
+                    </View>
+                    <PressableScale
+                      style={styles.deleteBtn}
+                      scaleTo={0.9}
+                      onPress={() => handleDelete(m)}
+                    >
+                      <Trash2 size={16} color={theme.colors.danger} />
+                    </PressableScale>
+                  </View>
+                </Reveal>
               ))
             )}
 
-            <TouchableOpacity style={styles.addButton} onPress={openAddFlow}>
-              <Plus size={18} color="#106B4F" />
-              <Text style={styles.addButtonText}>Agregar medicamento</Text>
-            </TouchableOpacity>
+            <Reveal variant="up" delay={200} index={meds.length}>
+              <PressableScale style={styles.addButton} onPress={openAddFlow}>
+                <Plus size={18} color={theme.colors.white} />
+                <Text style={styles.addButtonText}>{t.familia.addMedication}</Text>
+              </PressableScale>
+            </Reveal>
           </>
         )}
       </ScrollView>
@@ -317,110 +356,117 @@ export default function MedicamentosScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Agregar medicamento</Text>
-              <TouchableOpacity onPress={() => setAddOpen(false)}>
-                <X size={22} color="#052419" />
-              </TouchableOpacity>
+              <Text style={styles.modalTitle}>{t.familia.addMedication}</Text>
+              <PressableScale onPress={() => setAddOpen(false)} scaleTo={0.85}>
+                <X size={22} color={theme.colors.textPrimary} />
+              </PressableScale>
             </View>
 
-            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 16 }}>
-              <Text style={styles.modalLabel}>Medicamento</Text>
-              <View style={styles.modalInputWrap}>
-                <Search size={16} color="#6B7280" />
+            <KeyboardAwareScreen
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+            >
+              <Text style={styles.modalLabel}>{t.familia.medication}</Text>
+              <View style={[styles.modalInputWrap, searchFocused && styles.modalInputFocused]}>
+                <Search size={18} color={searchFocused ? theme.colors.accent : theme.colors.textMuted} />
                 <TextInput
                   style={styles.modalInput}
-                  placeholder="Buscar por nombre o principio activo"
-                  placeholderTextColor="#9CA3AF"
+                  placeholder={t.familia.searchByNameOrIngredient}
+                  placeholderTextColor={theme.colors.textMuted}
                   value={searchText}
                   onChangeText={setSearchText}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
                 />
               </View>
 
               <View style={styles.productsList}>
                 {productos.length === 0 ? (
-                  <Text style={styles.modalHint}>
-                    No hay productos con dosis registrada. Pide al equipo de Keriva que
-                    pueble la tabla `dosis_pediatricas`.
-                  </Text>
+                  <Text style={styles.modalHint}>{t.familia.noDoseProductsLong}</Text>
                 ) : (
-                  productos.map((p) => (
-                    <TouchableOpacity
-                      key={p.skuId}
-                      style={[
-                        styles.productItem,
-                        selectedProd?.skuId === p.skuId && styles.productItemActive,
-                      ]}
-                      onPress={() => setSelectedProd(p)}
-                    >
-                      <Text
-                        style={[
-                          styles.productName,
-                          selectedProd?.skuId === p.skuId && styles.productNameActive,
-                        ]}
+                  productos.map((p) => {
+                    const active = selectedProd?.skuId === p.skuId;
+                    return (
+                      <PressableScale
+                        key={p.skuId}
+                        style={[styles.productItem, active && styles.productItemActive]}
+                        scaleTo={0.97}
+                        onPress={() => setSelectedProd(p)}
                       >
-                        {p.nombreComercial}
-                      </Text>
-                      {p.principioActivo ? (
-                        <Text style={styles.productMeta}>{p.principioActivo}</Text>
-                      ) : null}
-                      {p.presentacion ? (
-                        <Text style={styles.productMeta}>{p.presentacion}</Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  ))
+                        <Text
+                          style={[
+                            styles.productName,
+                            active && styles.productNameActive,
+                          ]}
+                        >
+                          {p.nombreComercial}
+                        </Text>
+                        {p.principioActivo ? (
+                          <Text style={styles.productMeta}>{p.principioActivo}</Text>
+                        ) : null}
+                        {p.presentacion ? (
+                          <Text style={styles.productMeta}>{p.presentacion}</Text>
+                        ) : null}
+                      </PressableScale>
+                    );
+                  })
                 )}
               </View>
 
-              <Text style={styles.modalLabel}>Frecuencia</Text>
+              <Text style={styles.modalLabel}>{t.familia.frequency}</Text>
               <View style={styles.frecRow}>
-                {FRECUENCIA_OPTIONS.map(({ key, label }) => (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      styles.frecChip,
-                      frecuenciaTipo === key && styles.frecChipActive,
-                    ]}
-                    onPress={() => setFrecuenciaTipo(key)}
-                  >
-                    <Text
-                      style={[
-                        styles.frecChipText,
-                        frecuenciaTipo === key && styles.frecChipTextActive,
-                      ]}
+                {FRECUENCIA_OPTIONS.map(({ key }) => {
+                  const active = frecuenciaTipo === key;
+                  return (
+                    <PressableScale
+                      key={key}
+                      style={[styles.frecChip, active && styles.frecChipActive]}
+                      scaleTo={0.94}
+                      onPress={() => setFrecuenciaTipo(key)}
                     >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.frecChipText,
+                          active && styles.frecChipTextActive,
+                        ]}
+                      >
+                        {freqOptLabel(key)}
+                      </Text>
+                    </PressableScale>
+                  );
+                })}
               </View>
 
               <Text style={styles.modalLabel}>
                 {frecuenciaTipo === 'horas'
-                  ? 'Cada cuántas horas'
+                  ? t.familia.everyHowManyHours
                   : frecuenciaTipo === 'semanal'
-                  ? 'Veces por semana'
-                  : 'Veces al día'}
+                  ? t.familia.timesPerWeek
+                  : t.familia.timesPerDay}
               </Text>
-              <View style={styles.modalInputWrap}>
+              <View style={[styles.modalInputWrap, valorFocused && styles.modalInputFocused]}>
                 <TextInput
                   style={styles.modalInput}
                   keyboardType="number-pad"
                   value={frecuenciaValor}
                   onChangeText={setFrecuenciaValor}
                   maxLength={3}
+                  onFocus={() => setValorFocused(true)}
+                  onBlur={() => setValorFocused(false)}
                 />
               </View>
-            </ScrollView>
+            </KeyboardAwareScreen>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity
+              <PressableScale
                 style={styles.modalCancel}
+                scaleTo={0.96}
                 onPress={() => setAddOpen(false)}
                 disabled={submitting}
               >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                <Text style={styles.modalCancelText}>{t.familia.cancel}</Text>
+              </PressableScale>
+              <PressableScale
                 style={[
                   styles.modalSubmit,
                   (!selectedProd || submitting) && { opacity: 0.5 },
@@ -429,11 +475,11 @@ export default function MedicamentosScreen() {
                 onPress={onSubmitAdd}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={theme.colors.white} />
                 ) : (
-                  <Text style={styles.modalSubmitText}>Agregar</Text>
+                  <Text style={styles.modalSubmitText}>{t.familia.add}</Text>
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
           </View>
         </View>
@@ -450,124 +496,229 @@ export default function MedicamentosScreen() {
           onCancel={() => setDisclaimerOpen(false)}
         />
       ) : null}
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 50, paddingBottom: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: {
+    padding: theme.spacing.xxl,
+    paddingTop: 50,
+    paddingBottom: theme.spacing.huge,
+  },
   backButton: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
-  header: { alignItems: 'center', marginBottom: 20, gap: 6 },
+  header: { alignItems: 'center', marginBottom: theme.spacing.xl, gap: 6 },
   heroIcon: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(52, 194, 106, 0.15)',
-    justifyContent: 'center', alignItems: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 6,
+    ...theme.shadow.sm,
   },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 22, color: '#FFFFFF', textAlign: 'center' },
-  subtitle: { fontFamily: 'DMSans-Regular', fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 },
+  title: { ...theme.text.h1, color: theme.colors.textPrimary, textAlign: 'center' },
+  subtitle: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: theme.spacing.sm,
+  },
   legalBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 12, borderRadius: 10, marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
   },
-  legalBannerOk: { backgroundColor: '#E8F5E9', borderWidth: 1, borderColor: '#C8E6C9' },
-  legalBannerPending: { backgroundColor: '#FFF3E0', borderWidth: 1, borderColor: '#FFE0B2' },
-  legalBannerText: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 12, lineHeight: 17 },
-  emptyBox: { alignItems: 'center', paddingVertical: 30, gap: 6 },
+  legalBannerOk: { backgroundColor: theme.colors.accentSofter, borderColor: theme.colors.accentSoft },
+  legalBannerPending: { backgroundColor: theme.colors.warningSoft, borderColor: theme.colors.warningSoft },
+  legalBannerText: { flex: 1, ...theme.text.bodyMedium, fontSize: 12, lineHeight: 17 },
+  emptyBox: {
+    alignItems: 'center',
+    paddingVertical: theme.spacing.xxxl,
+    gap: 6,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
   emptyEmoji: { fontSize: 40 },
-  emptyTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 16, color: '#FFFFFF' },
-  emptyText: { fontFamily: 'DMSans-Regular', fontSize: 13, color: 'rgba(255,255,255,0.6)', textAlign: 'center' },
+  emptyTitle: { ...theme.text.h3, color: theme.colors.textPrimary },
+  emptyText: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: theme.spacing.lg,
+  },
   medCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14,
-    padding: 12, marginBottom: 10,
-    borderWidth: 1, borderColor: 'rgba(52, 194, 106, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
   },
   medCardLeft: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(52, 194, 106, 0.15)',
-    justifyContent: 'center', alignItems: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   medCardMain: { flex: 1, gap: 3 },
-  medName: { fontFamily: 'Poppins-SemiBold', fontSize: 15, color: '#FFFFFF' },
-  medPresentacion: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.6)' },
+  medName: { ...theme.text.h3, color: theme.colors.textPrimary },
+  medPresentacion: { ...theme.text.caption, color: theme.colors.textSecondary },
   medMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  medMetaText: { fontFamily: 'DMSans-Medium', fontSize: 12, color: 'rgba(255,255,255,0.6)' },
+  medMetaText: { ...theme.text.bodyMedium, fontSize: 12, color: theme.colors.textSecondary },
   deleteBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(255,107,107,0.1)',
-    borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)',
+    width: 38,
+    height: 38,
+    borderRadius: theme.radius.pill,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.dangerSoft,
   },
   addButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#FFFFFF', borderRadius: 12,
-    paddingVertical: 14, marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
+    ...theme.shadow.accent,
   },
-  addButtonText: { fontFamily: 'Poppins-Bold', fontSize: 15, color: '#106B4F' },
-  errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FF6B6B', textAlign: 'center', marginTop: 12 },
+  addButtonText: {
+    fontFamily: theme.font.bold,
+    fontSize: 15,
+    color: theme.colors.white,
+    letterSpacing: 0.3,
+  },
+  errorText: {
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.danger,
+    textAlign: 'center',
+    marginTop: theme.spacing.md,
+  },
 
   // Modal
   modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
+    flex: 1,
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingBottom: 16,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    paddingBottom: theme.spacing.lg,
+    maxHeight: '88%',
   },
   modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
   },
-  modalTitle: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#052419' },
+  modalTitle: { ...theme.text.h2, fontFamily: theme.font.bold, color: theme.colors.textPrimary },
+  modalScroll: { flexGrow: 0 },
+  modalScrollContent: { padding: theme.spacing.lg },
   modalLabel: {
-    fontFamily: 'DMSans-Bold', fontSize: 12, color: '#106B4F',
-    marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1,
+    ...theme.text.label,
+    color: theme.colors.accent,
+    marginTop: theme.spacing.md,
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   modalInputWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-    paddingHorizontal: 12, height: 44, backgroundColor: '#F9FAFB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    height: 50,
+    backgroundColor: theme.colors.bg,
   },
-  modalInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#052419' },
-  modalHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#6B7280', padding: 8 },
-  productsList: { marginTop: 8, gap: 6 },
+  modalInputFocused: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.surface,
+  },
+  modalInput: { flex: 1, fontFamily: theme.font.body, fontSize: 14, color: theme.colors.textPrimary },
+  modalHint: { ...theme.text.caption, color: theme.colors.textSecondary, padding: theme.spacing.sm },
+  productsList: { marginTop: theme.spacing.sm, gap: 6 },
   productItem: {
-    padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
-  productItemActive: { backgroundColor: '#E8F5E9', borderColor: '#34C26A' },
-  productName: { fontFamily: 'Poppins-SemiBold', fontSize: 14, color: '#052419' },
-  productNameActive: { color: '#106B4F' },
-  productMeta: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#6B7280', marginTop: 2 },
+  productItemActive: { backgroundColor: theme.colors.accentSofter, borderColor: theme.colors.accent },
+  productName: { ...theme.text.title, color: theme.colors.textPrimary },
+  productNameActive: { color: theme.colors.accent },
+  productMeta: { ...theme.text.caption, color: theme.colors.textSecondary, marginTop: 2 },
   frecRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   frecChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
-    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.bgSecondary,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
   },
-  frecChipActive: { backgroundColor: '#106B4F', borderColor: '#106B4F' },
-  frecChipText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#374151' },
-  frecChipTextActive: { color: '#FFFFFF' },
+  frecChipActive: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
+  frecChipText: { ...theme.text.bodyMedium, fontSize: 13, fontFamily: theme.font.bodyBold, color: theme.colors.textSecondary },
+  frecChipTextActive: { color: theme.colors.white },
   modalFooter: {
-    flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: '#F0F0F0',
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
   },
   modalCancel: {
-    flex: 1, paddingVertical: 14, borderRadius: 10,
-    borderWidth: 1, borderColor: '#D1D5DB', alignItems: 'center',
+    flex: 1,
+    paddingVertical: theme.spacing.lg,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
   },
-  modalCancelText: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#374151' },
+  modalCancelText: { ...theme.text.button, color: theme.colors.textSecondary },
   modalSubmit: {
-    flex: 2, paddingVertical: 14, borderRadius: 10,
-    backgroundColor: '#106B4F', alignItems: 'center',
+    flex: 2,
+    paddingVertical: theme.spacing.lg,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    ...theme.shadow.accent,
   },
-  modalSubmitText: { fontFamily: 'Poppins-Bold', fontSize: 14, color: '#FFFFFF' },
+  modalSubmitText: { fontFamily: theme.font.bold, fontSize: 15, color: theme.colors.white },
 });

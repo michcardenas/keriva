@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Alert,
   Linking,
   Platform,
@@ -20,10 +19,10 @@ import {
   buildWhatsAppLink,
   type PrecioRango,
 } from '@/lib/api/precios';
-
-// Verde oficial de WhatsApp (adendum §3.2)
-const WHATSAPP_GREEN = '#25D366';
-const WHATSAPP_GREEN_DARK = '#1EBD5B';
+import { useLanguage } from '@/lib/LanguageContext';
+import { useAuth } from '@/lib/AuthContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
 
 type Props = {
   /** UUID del producto (productos.id) */
@@ -45,6 +44,10 @@ export default function PriceRangeCard({
   farmaciaNombre,
   version = 0,
 }: Props) {
+  const { t } = useLanguage();
+  const { perfil } = useAuth();
+  // Farmacia y admin contribuyen/auditan sin límite diario.
+  const isUnlimited = perfil?.rol === 'farmacia' || perfil?.rol === 'admin';
   const [rango, setRango] = useState<PrecioRango | null>(null);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState<null | 'correcto' | 'incorrecto'>(null);
@@ -80,7 +83,7 @@ export default function PriceRangeCard({
   // Voto
   const handleVote = useCallback(
     async (voto: 'correcto' | 'incorrecto') => {
-      if (voting || hasVoted || votosHoy >= 3 || !rango) return;
+      if (voting || hasVoted || (!isUnlimited && votosHoy >= 3) || !rango) return;
       setVoting(voto);
       const precioVisto = (rango.precioMin + rango.precioMax) / 2;
       const res = await createAuditVote({ skuId, farmaciaId, voto, precioVisto });
@@ -90,11 +93,11 @@ export default function PriceRangeCard({
         setHasVoted(true);
         setVotosHoy((n) => n + 1);
       } else {
-        Alert.alert('No se pudo registrar', res.error);
+        Alert.alert(t.priceCard.couldNotRegister, res.error);
         if (res.limitReached) setVotosHoy(3);
       }
     },
-    [voting, hasVoted, votosHoy, rango, skuId, farmaciaId],
+    [voting, hasVoted, votosHoy, rango, skuId, farmaciaId, isUnlimited],
   );
 
   // WhatsApp
@@ -113,11 +116,11 @@ export default function PriceRangeCard({
     if (!abierta && whatsappData.horarioApertura && whatsappData.horarioCierre) {
       const horario = `${whatsappData.horarioApertura.slice(0, 5)} – ${whatsappData.horarioCierre.slice(0, 5)}`;
       Alert.alert(
-        'Fuera de horario',
-        `Esta farmacia atiende de ${horario}. ¿Quieres enviar el mensaje de todas formas?`,
+        t.priceCard.outOfHours,
+        `${t.priceCard.pharmacyHours} ${horario}. ${t.priceCard.sendAnyway}`,
         [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Enviar', onPress: open },
+          { text: t.priceCard.cancel, style: 'cancel' },
+          { text: t.priceCard.send, onPress: open },
         ],
       );
     } else {
@@ -129,7 +132,7 @@ export default function PriceRangeCard({
   if (loading) {
     return (
       <View style={[styles.card, styles.cardLoading]}>
-        <ActivityIndicator color="#106B4F" />
+        <ActivityIndicator color={theme.colors.accent} />
       </View>
     );
   }
@@ -137,103 +140,96 @@ export default function PriceRangeCard({
   if (!rango) {
     return (
       <View style={[styles.card, styles.cardEmpty]}>
-        <Text style={styles.emptyText}>Precio no disponible</Text>
-        <Text style={styles.emptySubtext}>Consulta directamente con la farmacia</Text>
+        <Text style={styles.emptyText}>{t.priceCard.priceUnavailable}</Text>
+        <Text style={styles.emptySubtext}>{t.priceCard.askPharmacy}</Text>
       </View>
     );
   }
 
   const rangoStr = formatPriceRange(rango);
   const votosRestantes = 3 - votosHoy;
-  const botonesDisabled = hasVoted || votosHoy >= 3;
+  const botonesDisabled = hasVoted || (!isUnlimited && votosHoy >= 3);
 
   return (
     <View style={styles.card}>
       {/* Rango estimado */}
       <View style={styles.header}>
-        <Text style={styles.label}>Rango estimado</Text>
+        <Text style={styles.label}>{t.priceCard.estimatedRange}</Text>
         <Text style={styles.range}>{rangoStr}</Text>
-        <Text style={styles.legend}>
-          Cotiza el precio exacto por WhatsApp con la farmacia.
-        </Text>
+        <Text style={styles.legend}>{t.priceCard.legend}</Text>
       </View>
 
       {/* Botón WhatsApp (si afiliada) */}
       {whatsappData && (
-        <TouchableOpacity
+        <PressableScale
           style={styles.whatsappBtn}
           onPress={handleWhatsApp}
-          activeOpacity={0.85}
         >
-          <MessageCircle size={20} color="#FFFFFF" />
-          <Text style={styles.whatsappBtnText}>Reservar por WhatsApp</Text>
-        </TouchableOpacity>
+          <MessageCircle size={20} color={theme.colors.white} />
+          <Text style={styles.whatsappBtnText}>{t.priceCard.reserveWhatsApp}</Text>
+        </PressableScale>
       )}
 
       {!whatsappData && (
         <View style={styles.nonAffiliateBox}>
-          <Clock size={14} color="#666" />
-          <Text style={styles.nonAffiliateText}>
-            Farmacia no afiliada · consulta presencialmente
-          </Text>
+          <Clock size={14} color={theme.colors.textSecondary} />
+          <Text style={styles.nonAffiliateText}>{t.priceCard.notAffiliated}</Text>
         </View>
       )}
 
       {/* Botones auditoría ✅/❌ */}
       <View style={styles.auditRow}>
-        <Text style={styles.auditLabel}>¿Este precio es correcto?</Text>
+        <Text style={styles.auditLabel}>{t.priceCard.isPriceCorrect}</Text>
         <View style={styles.auditButtons}>
-          <TouchableOpacity
+          <PressableScale
             style={[
               styles.auditBtn,
               styles.auditBtnOk,
               botonesDisabled && styles.auditBtnDisabled,
               voting === 'correcto' && styles.auditBtnActive,
             ]}
+            scaleTo={0.94}
             onPress={() => handleVote('correcto')}
             disabled={botonesDisabled || voting !== null}
-            activeOpacity={0.7}
           >
-            <Check size={16} color={botonesDisabled ? '#999' : '#106B4F'} />
+            <Check size={16} color={botonesDisabled ? theme.colors.textMuted : theme.colors.accent} />
             <Text style={[styles.auditBtnText, botonesDisabled && styles.auditBtnTextDisabled]}>
-              Compré a este precio
+              {t.priceCard.boughtAtPrice}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
 
-          <TouchableOpacity
+          <PressableScale
             style={[
               styles.auditBtn,
               styles.auditBtnBad,
               botonesDisabled && styles.auditBtnDisabled,
               voting === 'incorrecto' && styles.auditBtnActive,
             ]}
+            scaleTo={0.94}
             onPress={() => handleVote('incorrecto')}
             disabled={botonesDisabled || voting !== null}
-            activeOpacity={0.7}
           >
-            <X size={16} color={botonesDisabled ? '#999' : '#D32F2F'} />
+            <X size={16} color={botonesDisabled ? theme.colors.textMuted : theme.colors.danger} />
             <Text style={[styles.auditBtnText, botonesDisabled && styles.auditBtnTextDisabled]}>
-              Precio incorrecto
+              {t.priceCard.priceIncorrect}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         {hasVoted && (
-          <Text style={styles.thankyou}>
-            ¡Gracias por colaborar! Tu voto ayuda a mantener precios confiables.
-          </Text>
+          <Text style={styles.thankyou}>{t.priceCard.thankYou}</Text>
         )}
 
-        {!hasVoted && votosHoy > 0 && votosHoy < 3 && (
+        {!isUnlimited && !hasVoted && votosHoy > 0 && votosHoy < 3 && (
           <Text style={styles.votosRestantes}>
-            Te quedan {votosRestantes} {votosRestantes === 1 ? 'voto' : 'votos'} hoy en esta farmacia
+            {t.priceCard.votesLeftPrefix} {votosRestantes}{' '}
+            {votosRestantes === 1 ? t.priceCard.voteSingular : t.priceCard.votePlural}{' '}
+            {t.priceCard.votesLeftSuffix}
           </Text>
         )}
 
         {votosHoy >= 3 && !hasVoted && (
-          <Text style={styles.limitReached}>
-            Llegaste al límite diario en esta farmacia. Vuelve mañana.
-          </Text>
+          <Text style={styles.limitReached}>{t.priceCard.dailyLimit}</Text>
         )}
       </View>
     </View>
@@ -242,103 +238,99 @@ export default function PriceRangeCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: theme.colors.border,
+    ...theme.shadow.card,
   },
   cardLoading: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: theme.spacing.xxxl,
   },
   cardEmpty: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: theme.spacing.xl,
   },
   emptyText: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 14,
-    color: '#666',
+    ...theme.text.h3,
+    color: theme.colors.textSecondary,
   },
   emptySubtext: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
+    ...theme.text.caption,
+    color: theme.colors.textMuted,
+    marginTop: theme.spacing.xs,
   },
   header: {
-    marginBottom: 14,
+    marginBottom: theme.spacing.md,
   },
   label: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 12,
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   range: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 22,
-    color: '#052419',
-    marginTop: 4,
+    color: theme.colors.textPrimary,
+    marginTop: theme.spacing.xs,
   },
   legend: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#6B7280',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
     fontStyle: 'italic',
     marginTop: 6,
   },
   whatsappBtn: {
-    backgroundColor: WHATSAPP_GREEN,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: theme.colors.whatsapp,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    minHeight: 44,
-    borderBottomWidth: 2,
-    borderBottomColor: WHATSAPP_GREEN_DARK,
+    gap: theme.spacing.sm,
+    minHeight: 48,
+    ...theme.shadow.card,
   },
   whatsappBtnText: {
-    fontFamily: 'Poppins-SemiBold',
+    fontFamily: theme.font.semibold,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: theme.colors.white,
   },
   nonAffiliateBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.bgSecondary,
+    borderRadius: theme.radius.sm,
   },
   nonAffiliateText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
   },
   auditRow: {
-    marginTop: 14,
-    paddingTop: 14,
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderTopColor: theme.colors.borderLight,
   },
   auditLabel: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 8,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
   },
   auditButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   auditBtn: {
     flex: 1,
@@ -346,51 +338,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.sm,
     borderWidth: 1,
   },
   auditBtnOk: {
-    backgroundColor: '#F0F9F4',
-    borderColor: '#34C26A',
+    backgroundColor: theme.colors.accentSofter,
+    borderColor: theme.colors.accent,
   },
   auditBtnBad: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
+    backgroundColor: theme.colors.dangerSoft,
+    borderColor: theme.colors.danger,
   },
   auditBtnDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
+    backgroundColor: theme.colors.bgSecondary,
+    borderColor: theme.colors.border,
   },
   auditBtnActive: {
     opacity: 0.6,
   },
   auditBtnText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 12,
-    color: '#052419',
+    color: theme.colors.textPrimary,
   },
   auditBtnTextDisabled: {
-    color: '#999',
+    color: theme.colors.textMuted,
   },
   thankyou: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 11,
-    color: '#106B4F',
-    marginTop: 8,
+    color: theme.colors.accent,
+    marginTop: theme.spacing.sm,
     textAlign: 'center',
   },
   votosRestantes: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.caption,
     fontSize: 11,
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     marginTop: 6,
     textAlign: 'center',
   },
   limitReached: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 11,
-    color: '#9CA3AF',
+    color: theme.colors.textMuted,
     marginTop: 6,
     textAlign: 'center',
   },

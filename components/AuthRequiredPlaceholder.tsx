@@ -1,7 +1,10 @@
 import { type ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
 
 type AuthRequiredPlaceholderProps = {
   icon: ReactNode;
@@ -15,38 +18,46 @@ export default function AuthRequiredPlaceholder({
   icon,
   title,
   description,
-  registerLabel = 'Crear cuenta gratis',
-  loginLabel = 'Ya tengo cuenta',
+  registerLabel,
+  loginLabel,
 }: AuthRequiredPlaceholderProps) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const resolvedRegister = registerLabel ?? t.comp.registerLabel;
+  const resolvedLogin = loginLabel ?? t.comp.loginLabel;
 
   return (
-    <LinearGradient
-      colors={['#052419', '#106B4F', '#052419']}
-      style={styles.container}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
-    >
-      <View style={styles.iconBox}>{icon}</View>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.description}>{description}</Text>
+    <View style={styles.container}>
+      <Reveal variant="up" delay={60}>
+        <View style={styles.iconBox}>{icon}</View>
+      </Reveal>
+      <Reveal variant="up" delay={120}>
+        <Text style={styles.title}>{title}</Text>
+      </Reveal>
+      <Reveal variant="up" delay={160}>
+        <Text style={styles.description}>{description}</Text>
+      </Reveal>
 
       <View style={styles.buttons}>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => router.push('/auth/register')}
-        >
-          <Text style={styles.primaryButtonText}>{registerLabel}</Text>
-        </TouchableOpacity>
+        <Reveal index={1} delay={200} style={styles.buttonWrap}>
+          <PressableScale
+            style={styles.primaryButton}
+            onPress={() => router.push('/auth/register')}
+          >
+            <Text style={styles.primaryButtonText}>{resolvedRegister}</Text>
+          </PressableScale>
+        </Reveal>
 
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.push('/auth/login')}
-        >
-          <Text style={styles.secondaryButtonText}>{loginLabel}</Text>
-        </TouchableOpacity>
+        <Reveal index={2} delay={240} style={styles.buttonWrap}>
+          <PressableScale
+            style={styles.secondaryButton}
+            onPress={() => router.push('/auth/login')}
+          >
+            <Text style={styles.secondaryButtonText}>{resolvedLogin}</Text>
+          </PressableScale>
+        </Reveal>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -55,58 +66,66 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    padding: theme.spacing.xxxl,
+    backgroundColor: theme.colors.bg,
   },
   iconBox: {
     width: 120,
     height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(52, 194, 106, 0.1)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: theme.spacing.xxl,
+    alignSelf: 'center',
   },
   title: {
-    fontFamily: 'Poppins-Bold',
+    ...theme.text.h1,
     fontSize: 26,
-    color: '#FFFFFF',
+    lineHeight: 32,
+    color: theme.colors.textPrimary,
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: theme.spacing.md,
   },
   description: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 36,
-    paddingHorizontal: 16,
+    marginBottom: theme.spacing.xxxl,
+    paddingHorizontal: theme.spacing.lg,
   },
   buttons: {
     alignSelf: 'stretch',
-    gap: 12,
+    gap: theme.spacing.md,
+  },
+  buttonWrap: {
+    alignSelf: 'stretch',
   },
   primaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
     alignItems: 'center',
+    ...theme.shadow.accent,
   },
   primaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 16,
-    color: '#106B4F',
+    color: theme.colors.accentText,
   },
   secondaryButton: {
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accentSofter,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: theme.colors.accent,
   },
 });

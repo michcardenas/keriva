@@ -4,20 +4,24 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Eye, EyeOff } from 'lucide-react-native';
 import { signUpWithEmail } from '@/lib/api/auth';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
+
+type Field = 'nombre' | 'email' | 'telefono' | 'cedula' | 'password';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,15 +30,16 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState<Field | null>(null);
 
   async function handleSubmit() {
     setError(null);
     if (!email.trim() || !password) {
-      setError('Ingresa tu correo y contraseña');
+      setError(t.auth.enterEmailAndPassword);
       return;
     }
     if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres');
+      setError(t.auth.passwordMin6);
       return;
     }
     setLoading(true);
@@ -60,237 +65,277 @@ export default function RegisterScreen() {
     router.replace('/(tabs)');
   }
 
+  const iconColor = (field: Field) =>
+    focused === field ? theme.colors.accent : theme.colors.textMuted;
+
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft color="#FFFFFF" size={24} />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+          <ArrowLeft color={theme.colors.textPrimary} size={22} />
+        </PressableScale>
 
-          {/* Logo + branding */}
+        {/* Logo + branding */}
+        <Reveal variant="up" delay={60}>
           <View style={styles.branding}>
-            <Image
-              source={require('@/assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.logoBadge}>
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.title}>{t.auth.joinKeriva}</Text>
+            <Text style={styles.subtitle}>{t.auth.registerSubtitle}</Text>
           </View>
+        </Reveal>
 
-          <View style={styles.header}>
-            <Text style={styles.title}>Únete a Keriva</Text>
-            <Text style={styles.subtitle}>
-              Compara precios, reporta y gana puntos ayudando a tu comunidad
-            </Text>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputWrapper}>
-              <User size={20} color="rgba(255,255,255,0.6)" />
+        <View style={styles.form}>
+          <Reveal index={1} delay={120}>
+            <View style={[styles.inputWrapper, focused === 'nombre' && styles.inputFocused]}>
+              <User size={20} color={iconColor('nombre')} />
               <TextInput
                 style={styles.input}
-                placeholder="Nombre completo"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholder={t.auth.fullName}
+                placeholderTextColor={theme.colors.textMuted}
                 value={nombre}
                 onChangeText={setNombre}
                 editable={!loading}
+                onFocus={() => setFocused('nombre')}
+                onBlur={() => setFocused(null)}
               />
             </View>
+          </Reveal>
 
-            <View style={styles.inputWrapper}>
-              <Mail size={20} color="rgba(255,255,255,0.6)" />
+          <Reveal index={2} delay={160}>
+            <View style={[styles.inputWrapper, focused === 'email' && styles.inputFocused]}>
+              <Mail size={20} color={iconColor('email')} />
               <TextInput
                 style={styles.input}
-                placeholder="Correo electrónico"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholder={t.auth.email}
+                placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
                 value={email}
                 onChangeText={setEmail}
                 editable={!loading}
+                onFocus={() => setFocused('email')}
+                onBlur={() => setFocused(null)}
               />
             </View>
+          </Reveal>
 
-            <View style={styles.inputWrapper}>
-              <Phone size={20} color="rgba(255,255,255,0.6)" />
+          <Reveal index={3} delay={200}>
+            <View style={[styles.inputWrapper, focused === 'telefono' && styles.inputFocused]}>
+              <Phone size={20} color={iconColor('telefono')} />
               <TextInput
                 style={styles.input}
-                placeholder="Teléfono (809-000-0000)"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholder={t.auth.phonePlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
                 keyboardType="phone-pad"
                 value={telefono}
                 onChangeText={setTelefono}
                 editable={!loading}
+                onFocus={() => setFocused('telefono')}
+                onBlur={() => setFocused(null)}
               />
             </View>
+          </Reveal>
 
-            <View style={styles.inputWrapper}>
-              <IdCard size={20} color="rgba(255,255,255,0.6)" />
+          <Reveal index={4} delay={240}>
+            <View style={[styles.inputWrapper, focused === 'cedula' && styles.inputFocused]}>
+              <IdCard size={20} color={iconColor('cedula')} />
               <TextInput
                 style={styles.input}
-                placeholder="Cédula (opcional, 000-0000000-0)"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholder={t.auth.cedulaPlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
                 keyboardType="number-pad"
                 value={cedula}
                 onChangeText={setCedula}
                 editable={!loading}
+                onFocus={() => setFocused('cedula')}
+                onBlur={() => setFocused(null)}
               />
             </View>
+          </Reveal>
 
-            <View style={styles.inputWrapper}>
-              <Lock size={20} color="rgba(255,255,255,0.6)" />
+          <Reveal index={5} delay={280}>
+            <View style={[styles.inputWrapper, focused === 'password' && styles.inputFocused]}>
+              <Lock size={20} color={iconColor('password')} />
               <TextInput
                 style={styles.input}
-                placeholder="Contraseña (mínimo 6)"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholder={t.auth.passwordMin6Placeholder}
+                placeholderTextColor={theme.colors.textMuted}
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
                 editable={!loading}
+                onFocus={() => setFocused('password')}
+                onBlur={() => setFocused(null)}
               />
-              <TouchableOpacity
+              <PressableScale
                 onPress={() => setShowPassword(!showPassword)}
+                scaleTo={0.85}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 {showPassword ? (
-                  <EyeOff size={20} color="rgba(255,255,255,0.6)" />
+                  <EyeOff size={20} color={theme.colors.textMuted} />
                 ) : (
-                  <Eye size={20} color="rgba(255,255,255,0.6)" />
+                  <Eye size={20} color={theme.colors.textMuted} />
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
+          </Reveal>
 
-            {error && <Text style={styles.errorText}>{error}</Text>}
+          {error && (
+            <Reveal variant="fade">
+              <Text style={styles.errorText}>{error}</Text>
+            </Reveal>
+          )}
 
-            <TouchableOpacity
+          <Reveal index={6} delay={320}>
+            <PressableScale
               style={[styles.primaryButton, loading && styles.buttonDisabled]}
               onPress={handleSubmit}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#106B4F" />
+                <ActivityIndicator color={theme.colors.white} />
               ) : (
-                <Text style={styles.primaryButtonText}>Crear cuenta</Text>
+                <Text style={styles.primaryButtonText}>{t.auth.createAccount}</Text>
               )}
-            </TouchableOpacity>
+            </PressableScale>
+          </Reveal>
 
-            <Text style={styles.disclaimer}>
-              Al registrarte aceptas los términos de uso y la política de privacidad de Keriva.
-            </Text>
+          <Reveal index={7} delay={350}>
+            <Text style={styles.disclaimer}>{t.auth.termsDisclaimer}</Text>
+          </Reveal>
 
-            <TouchableOpacity
+          <Reveal index={8} delay={380}>
+            <PressableScale
               style={styles.linkButton}
               onPress={() => router.replace('/auth/login')}
               disabled={loading}
             >
               <Text style={styles.linkText}>
-                ¿Ya tienes cuenta? <Text style={styles.linkTextBold}>Inicia sesión</Text>
+                {t.auth.alreadyHaveAccount}
+                <Text style={styles.linkTextBold}>{t.auth.signIn}</Text>
               </Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+            </PressableScale>
+          </Reveal>
+        </View>
+      </KeyboardAwareScreen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 50 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: { flexGrow: 1, padding: theme.spacing.xxl, paddingTop: 50 },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
   branding: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: theme.spacing.xxl,
+  },
+  logoBadge: {
+    width: 88,
+    height: 88,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.accent,
   },
   logoImage: {
-    width: 100,
-    height: 100,
+    width: 62,
+    height: 62,
   },
-  header: { marginBottom: 18, alignItems: 'center' },
   title: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 24,
-    color: '#FFFFFF',
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   subtitle: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
     marginTop: 6,
     textAlign: 'center',
   },
-  form: { gap: 12 },
+  form: { gap: theme.spacing.md },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 54,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
   },
   input: {
     flex: 1,
-    fontFamily: 'DMSans-Regular',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
   },
   errorText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#FF6B6B',
+    color: theme.colors.danger,
     textAlign: 'center',
   },
   primaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: theme.spacing.xs,
+    ...theme.shadow.accent,
   },
   buttonDisabled: { opacity: 0.7 },
   primaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 16,
-    color: '#106B4F',
+    color: theme.colors.white,
+    letterSpacing: 0.3,
   },
   disclaimer: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.caption,
     fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
+    color: theme.colors.textMuted,
     textAlign: 'center',
     lineHeight: 16,
-    marginTop: 4,
-    paddingHorizontal: 12,
+    marginTop: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
   },
-  linkButton: { alignItems: 'center', paddingVertical: 12 },
+  linkButton: { alignItems: 'center', paddingVertical: theme.spacing.md },
   linkText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
   },
   linkTextBold: {
-    fontFamily: 'DMSans-Bold',
-    color: '#34C26A',
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
   },
 });

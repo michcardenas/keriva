@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { restRpc } from '@/lib/api/_rest';
 import { generateCSV, downloadCSV } from '@/lib/csv';
 import type { FarmaciaOsm } from '@/lib/database.types';
 
@@ -76,11 +77,32 @@ export async function getActivePharmacies(): Promise<PharmacyView[]> {
 
   if (error) throw error;
 
-  const rows = (data as unknown as FarmaciaOsm[]) ?? [];
+  return mapOsmRows((data as unknown as FarmaciaOsm[]) ?? []);
+}
 
-  // Lookup de afiliación: un query separado a farmacia_whatsapp porque el
-  // FK va contra "Farmacias"(id) legacy y farmacias_osm puede no tener
-  // el link resuelto todavía.
+/**
+ * Bug 01 (Capa 2) — farmacias dentro de `radioM` metros del punto, vía la RPC
+ * PostGIS `farmacias_cercanas`. Si la RPC aún no existe (migración sin aplicar)
+ * o devuelve menos de 5 resultados, el caller decide el fallback.
+ */
+export async function getNearbyPharmacies(
+  lat: number,
+  lng: number,
+  radioM = 2000,
+): Promise<PharmacyView[]> {
+  const rows = await restRpc<FarmaciaOsm[]>('farmacias_cercanas', {
+    p_lat: lat,
+    p_lng: lng,
+    p_radio_m: radioM,
+  });
+  return mapOsmRows(Array.isArray(rows) ? rows : []);
+}
+
+/**
+ * Mapea filas de farmacias_osm a PharmacyView, resolviendo la afiliación
+ * WhatsApp con un query separado (FK va contra "Farmacias"(id) legacy).
+ */
+async function mapOsmRows(rows: FarmaciaOsm[]): Promise<PharmacyView[]> {
   const linkedIds = rows
     .map((r) => r.farmacia_id)
     .filter((id): id is number => typeof id === 'number');
@@ -145,6 +167,31 @@ export async function getAllFarmaciasAdmin(): Promise<FarmaciaAdmin[]> {
     longitud: Number(f.longitud) || 0,
     createdAt: f.created_at,
   }));
+}
+
+// ── Cuenta de farmacia (perfil de la marca) ─────────────────
+
+export type FarmaciaCuenta = { id: number; nombre: string; logoUrl: string | null };
+
+/** Datos de la cuenta (marca) de la farmacia del usuario actual. */
+export async function getMiFarmacia(): Promise<FarmaciaCuenta | null> {
+  const { data, error } = await supabase.rpc('mi_farmacia');
+  const row = Array.isArray(data) ? data[0] : null;
+  if (error || !row) return null;
+  return { id: row.id, nombre: row.nombre, logoUrl: row.logo_url ?? null };
+}
+
+/** Actualiza el nombre comercial (y opcionalmente el logo) de la cuenta. */
+export async function actualizarCuentaFarmacia(
+  nombre: string,
+  logoUrl?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.rpc('actualizar_cuenta_farmacia', {
+    p_nombre: nombre,
+    p_logo_url: logoUrl ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function toggleFarmaciaActiva(

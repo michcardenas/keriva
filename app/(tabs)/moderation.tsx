@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Image,
@@ -12,7 +11,6 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   ShieldCheck,
   Clock,
@@ -25,6 +23,7 @@ import {
   Search,
   MapPin,
   Phone,
+  Pill,
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -52,6 +51,11 @@ import {
 } from '@/lib/api/medicamentos';
 import { pickAndParseCSV } from '@/lib/csv';
 import LanguageSelector from '@/components/LanguageSelector';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import PillBackground from '@/components/ui/PillBackground';
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -64,7 +68,10 @@ function formatDate(iso: string): string {
   });
 }
 
+type TabKey = 'reportes' | 'solicitudes' | 'gestion' | 'datos';
+
 export default function ModerationScreen() {
+  const { t } = useLanguage();
   const { perfil } = useAuth();
   const rol = perfil?.rol ?? 'usuario';
 
@@ -75,7 +82,7 @@ export default function ModerationScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'reportes' | 'solicitudes' | 'gestion' | 'datos'>('reportes');
+  const [activeTab, setActiveTab] = useState<TabKey>('reportes');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
 
@@ -159,27 +166,27 @@ export default function ModerationScreen() {
         return; // user cancelled
       }
       if (rows.length === 0) {
-        setImportResult('El archivo CSV está vacío o tiene formato inválido');
+        setImportResult(t.moderation.csvEmpty);
         setImporting(false);
         return;
       }
       const result = type === 'farmacias'
         ? await importFarmaciasCSV(rows)
         : await importMedicamentosCSV(rows);
-      setImportResult(`${result.inserted} registros importados${result.errors > 0 ? `, ${result.errors} con error` : ''}`);
+      setImportResult(`${result.inserted} ${t.moderation.recordsImported}${result.errors > 0 ? `, ${result.errors} ${t.moderation.withError}` : ''}`);
       if (type === 'farmacias') {
         const farmData = await getAllFarmaciasAdmin();
         setFarmacias(farmData);
       }
     } catch {
-      setImportResult('Error al procesar el archivo');
+      setImportResult(t.moderation.fileError);
     }
     setImporting(false);
   }
 
   async function handleRechazarSolicitud(id: number) {
     setActioning(id);
-    const res = await rechazarSolicitud(id, 'Solicitud rechazada por el administrador');
+    const res = await rechazarSolicitud(id, t.moderation.autoRejectReason);
     setActioning(null);
     if (res.ok) {
       setSolicitudes((prev) => prev.filter((s) => s.id !== id));
@@ -190,38 +197,57 @@ export default function ModerationScreen() {
   if (rol === 'usuario') {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
-          <Text style={styles.headerTitle}>Moderación</Text>
-        </LinearGradient>
-        <View style={styles.emptyInfo}>
-          <ShieldCheck size={48} color="#999" />
-          <Text style={styles.emptyInfoTitle}>Solo para farmacias y administradores</Text>
-          <Text style={styles.emptyInfoText}>
-            Esta sección permite verificar los precios reportados por la comunidad.
-          </Text>
-        </View>
+        <PillBackground />
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerTopRow}>
+            <Text style={styles.headerTitle}>{t.moderation.title}</Text>
+          </View>
+          <Reveal variant="up" delay={60}>
+            <View style={styles.emptyInfo}>
+              <View style={styles.emptyIconBubble}>
+                <ShieldCheck size={36} color={theme.colors.accent} />
+              </View>
+              <Text style={styles.emptyInfoTitle}>{t.moderation.onlyForStaff}</Text>
+              <Text style={styles.emptyInfoText}>{t.moderation.onlyForStaffDesc}</Text>
+            </View>
+          </Reveal>
+        </ScrollView>
       </View>
     );
   }
 
   const isAdmin = rol === 'admin';
-  const title = isAdmin ? 'Moderación global' : 'Mi farmacia';
+  const title = isAdmin ? t.moderation.globalTitle : t.moderation.myPharmacyTitle;
   const subtitle = isAdmin
-    ? 'Verifica precios reportados por la comunidad'
-    : 'Verifica los precios reportados en tu sucursal';
+    ? t.moderation.adminSubtitle
+    : t.moderation.pharmacySubtitle;
+
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: 'reportes', label: `${t.moderation.tabReports} (${reports.length})` },
+    { key: 'solicitudes', label: `${t.moderation.tabRequests} (${solicitudes.length})` },
+    { key: 'gestion', label: t.moderation.tabManagement },
+    { key: 'datos', label: t.moderation.tabData },
+  ];
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
+      <PillBackground />
+
+      {/* Header (claro) */}
+      <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <View style={styles.headerBadge}>
             {isAdmin ? (
-              <UserCog size={16} color="#34C26A" />
+              <UserCog size={14} color={theme.colors.accent} />
             ) : (
-              <Store size={16} color="#34C26A" />
+              <Store size={14} color={theme.colors.accent} />
             )}
             <Text style={styles.headerBadgeText}>
-              {isAdmin ? 'Administrador' : 'Farmacia'}
+              {isAdmin ? t.moderation.roleAdmin : t.moderation.rolePharmacy}
             </Text>
           </View>
           <LanguageSelector />
@@ -233,155 +259,170 @@ export default function ModerationScreen() {
         {!isAdmin && (
           <View style={styles.statsBar}>
             <View style={styles.statBox}>
-              <Clock size={16} color="#FFF3E0" />
+              <View style={styles.statIconBubble}>
+                <Clock size={16} color={theme.colors.accent} />
+              </View>
               <Text style={styles.statValue}>{reports.length}</Text>
-              <Text style={styles.statLabel}>Pendientes</Text>
+              <Text style={styles.statLabel}>{t.moderation.pending}</Text>
             </View>
           </View>
         )}
 
         {/* Admin tabs */}
         {isAdmin && (
-          <View style={styles.tabBar}>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'reportes' && styles.tabActive]}
-              onPress={() => setActiveTab('reportes')}
-            >
-              <Text style={[styles.tabText, activeTab === 'reportes' && styles.tabTextActive]}>
-                Reportes ({reports.length})
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'solicitudes' && styles.tabActive]}
-              onPress={() => setActiveTab('solicitudes')}
-            >
-              <Text style={[styles.tabText, activeTab === 'solicitudes' && styles.tabTextActive]}>
-                Solicitudes ({solicitudes.length})
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'gestion' && styles.tabActive]}
-              onPress={() => setActiveTab('gestion')}
-            >
-              <Text style={[styles.tabText, activeTab === 'gestion' && styles.tabTextActive]}>
-                Gestión
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'datos' && styles.tabActive]}
-              onPress={() => setActiveTab('datos')}
-            >
-              <Text style={[styles.tabText, activeTab === 'datos' && styles.tabTextActive]}>
-                Datos
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabBar}
+          >
+            {tabs.map((tab) => {
+              const active = activeTab === tab.key;
+              return (
+                <PressableScale
+                  key={tab.key}
+                  style={[styles.tab, active && styles.tabActive]}
+                  onPress={() => setActiveTab(tab.key)}
+                  scaleTo={0.95}
+                >
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                    {tab.label}
+                  </Text>
+                </PressableScale>
+              );
+            })}
+          </ScrollView>
         )}
-      </LinearGradient>
+      </View>
 
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentInner}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.accent}
+            colors={[theme.colors.accent]}
+          />
+        }
       >
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color="#106B4F" size="large" />
+            <ActivityIndicator color={theme.colors.accent} size="large" />
           </View>
         ) : activeTab === 'datos' && isAdmin ? (
-          <View style={{ gap: 16 }}>
+          <View style={{ gap: theme.spacing.lg }}>
             {importResult && (
-              <View style={[styles.card, { backgroundColor: '#E8F5E9', padding: 14 }]}>
-                <Text style={{ fontFamily: 'DMSans-Bold', fontSize: 14, color: '#106B4F' }}>
-                  {importResult}
-                </Text>
-              </View>
+              <Reveal variant="fade">
+                <View style={styles.resultCard}>
+                  <Text style={styles.resultText}>{importResult}</Text>
+                </View>
+              </Reveal>
             )}
 
             {/* Instructions */}
-            <View style={[styles.card, { backgroundColor: '#F0F9F4', borderColor: '#C8E6C9', borderWidth: 1 }]}>
-              <Text style={[styles.cardMedName, { marginBottom: 8 }]}>Como importar datos</Text>
-              <Text style={styles.instructionText}>1. Toca "Exportar CSV" para descargar el archivo actual</Text>
-              <Text style={styles.instructionText}>2. Abre el archivo en Excel o Google Sheets</Text>
-              <Text style={styles.instructionText}>3. Agrega, edita o elimina filas (no cambies los nombres de las columnas de la primera fila)</Text>
-              <Text style={styles.instructionText}>4. Guarda como CSV (separado por punto y coma o coma)</Text>
-              <Text style={styles.instructionText}>5. Toca "Importar CSV" y selecciona tu archivo</Text>
-              <Text style={[styles.instructionText, { color: '#106B4F', marginTop: 6 }]}>
-                Si un registro ya existe (mismo nombre), se actualiza. Si es nuevo, se crea.
-              </Text>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardMedName}>Farmacias</Text>
-              <Text style={styles.cardPharm}>{farmacias.length} farmacias registradas</Text>
-              <View style={[styles.actions, { marginTop: 12 }]}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.verifyBtn]}
-                  onPress={exportFarmaciasCSV}
-                >
-                  <Download size={16} color="#FFFFFF" />
-                  <Text style={styles.verifyText}>Exportar CSV</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#0D47A1' }]}
-                  onPress={() => handleImportCSV('farmacias')}
-                  disabled={importing}
-                >
-                  {importing ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.verifyText}>Importar CSV</Text>
-                  )}
-                </TouchableOpacity>
+            <Reveal index={0}>
+              <View style={styles.instructionCard}>
+                <Text style={styles.cardMedName}>{t.moderation.howToImport}</Text>
+                <Text style={styles.instructionText}>{t.moderation.importStep1}</Text>
+                <Text style={styles.instructionText}>{t.moderation.importStep2}</Text>
+                <Text style={styles.instructionText}>{t.moderation.importStep3}</Text>
+                <Text style={styles.instructionText}>{t.moderation.importStep4}</Text>
+                <Text style={styles.instructionText}>{t.moderation.importStep5}</Text>
+                <Text style={styles.instructionNote}>{t.moderation.importNote}</Text>
               </View>
-              <Text style={styles.instructionColumns}>
-                Columnas: nombre; direccion; ciudad; telefono; horario; activa; latitud; longitud
-              </Text>
-            </View>
+            </Reveal>
 
-            <View style={styles.card}>
-              <Text style={styles.cardMedName}>Medicamentos</Text>
-              <Text style={styles.cardPharm}>Catálogo curado de medicamentos</Text>
-              <View style={[styles.actions, { marginTop: 12 }]}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.verifyBtn]}
-                  onPress={exportMedicamentosCSV}
-                >
-                  <Download size={16} color="#FFFFFF" />
-                  <Text style={styles.verifyText}>Exportar CSV</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#0D47A1' }]}
-                  onPress={() => handleImportCSV('medicamentos')}
-                  disabled={importing}
-                >
-                  {importing ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.verifyText}>Importar CSV</Text>
-                  )}
-                </TouchableOpacity>
+            <Reveal index={1}>
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardIconBox}>
+                    <Store size={20} color={theme.colors.accent} />
+                  </View>
+                  <View style={styles.cardHeaderText}>
+                    <Text style={styles.cardMedName}>{t.moderation.pharmaciesTitle}</Text>
+                    <Text style={styles.cardPharm}>{farmacias.length} {t.moderation.pharmaciesRegistered}</Text>
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.verifyBtn]}
+                    onPress={exportFarmaciasCSV}
+                  >
+                    <Download size={16} color={theme.colors.accentText} />
+                    <Text style={styles.verifyText}>{t.moderation.exportCSV}</Text>
+                  </PressableScale>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.importBtn]}
+                    onPress={() => handleImportCSV('farmacias')}
+                    disabled={importing}
+                  >
+                    {importing ? (
+                      <ActivityIndicator color={theme.colors.info} size="small" />
+                    ) : (
+                      <Text style={styles.importText}>{t.moderation.importCSV}</Text>
+                    )}
+                  </PressableScale>
+                </View>
+                <Text style={styles.instructionColumns}>
+                  Columnas: nombre; direccion; ciudad; telefono; horario; activa; latitud; longitud
+                </Text>
               </View>
-              <Text style={styles.instructionColumns}>
-                Columnas: nombre; nombre_generico; concentracion; presentacion; laboratorio; categoria; precio_referencia_rd
-              </Text>
-            </View>
+            </Reveal>
+
+            <Reveal index={2}>
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardIconBox}>
+                    <Pill size={20} color={theme.colors.accent} />
+                  </View>
+                  <View style={styles.cardHeaderText}>
+                    <Text style={styles.cardMedName}>{t.moderation.medicationsTitle}</Text>
+                    <Text style={styles.cardPharm}>{t.moderation.medicationsCatalog}</Text>
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.verifyBtn]}
+                    onPress={exportMedicamentosCSV}
+                  >
+                    <Download size={16} color={theme.colors.accentText} />
+                    <Text style={styles.verifyText}>{t.moderation.exportCSV}</Text>
+                  </PressableScale>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.importBtn]}
+                    onPress={() => handleImportCSV('medicamentos')}
+                    disabled={importing}
+                  >
+                    {importing ? (
+                      <ActivityIndicator color={theme.colors.info} size="small" />
+                    ) : (
+                      <Text style={styles.importText}>{t.moderation.importCSV}</Text>
+                    )}
+                  </PressableScale>
+                </View>
+                <Text style={styles.instructionColumns}>
+                  Columnas: nombre; nombre_generico; concentracion; presentacion; laboratorio; categoria; precio_referencia_rd
+                </Text>
+              </View>
+            </Reveal>
           </View>
         ) : activeTab === 'gestion' && isAdmin ? (
           <>
             <View style={styles.filterRow}>
-              <Search size={16} color="#999" />
+              <Search size={16} color={theme.colors.textMuted} />
               <TextInput
                 style={styles.filterInput}
-                placeholder="Filtrar por nombre o ciudad..."
-                placeholderTextColor="#999"
+                placeholder={t.moderation.filterPlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
                 value={farmaciaFilter}
                 onChangeText={setFarmaciaFilter}
               />
               {farmaciaFilter ? (
-                <TouchableOpacity onPress={() => setFarmaciaFilter('')}>
-                  <X size={16} color="#999" />
-                </TouchableOpacity>
+                <PressableScale onPress={() => setFarmaciaFilter('')} scaleTo={0.85}>
+                  <X size={16} color={theme.colors.textMuted} />
+                </PressableScale>
               ) : null}
             </View>
 
@@ -395,211 +436,219 @@ export default function ModerationScreen() {
               if (filtered.length === 0) {
                 return (
                   <View style={styles.emptyBox}>
-                    <Text style={styles.emptyEmoji}>🏪</Text>
-                    <Text style={styles.emptyTitle}>No se encontraron farmacias</Text>
+                    <View style={styles.emptyIconBubble}>
+                      <Store size={32} color={theme.colors.accent} />
+                    </View>
+                    <Text style={styles.emptyTitle}>{t.moderation.noPharmaciesFound}</Text>
                   </View>
                 );
               }
 
-              return filtered.map((f) => (
-                <View key={f.id} style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <View style={[styles.cardIconBox, { backgroundColor: f.activa ? '#E8F5E9' : '#FFEBEE' }]}>
-                      <Store size={20} color={f.activa ? '#106B4F' : '#D32F2F'} />
-                    </View>
-                    <View style={styles.cardHeaderText}>
-                      <Text style={styles.cardMedName}>{f.nombre}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                        <MapPin size={12} color="#666" />
-                        <Text style={styles.cardPharm}>{f.ciudad} · {f.direccion}</Text>
+              return filtered.map((f, idx) => (
+                <Reveal key={f.id} index={idx}>
+                  <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                      <View style={[styles.cardIconBox, !f.activa && styles.cardIconBoxInactive]}>
+                        <Store size={20} color={f.activa ? theme.colors.accent : theme.colors.danger} />
                       </View>
-                      {f.telefono && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                          <Phone size={12} color="#666" />
-                          <Text style={styles.cardPharm}>{f.telefono}</Text>
+                      <View style={styles.cardHeaderText}>
+                        <Text style={styles.cardMedName}>{f.nombre}</Text>
+                        <View style={styles.metaRow}>
+                          <MapPin size={12} color={theme.colors.textSecondary} />
+                          <Text style={styles.cardPharm}>{f.ciudad} · {f.direccion}</Text>
                         </View>
-                      )}
-                      {f.horario && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                          <Clock size={12} color="#666" />
-                          <Text style={styles.cardPharm}>{f.horario}</Text>
-                        </View>
-                      )}
-                      <Text style={styles.cardDate}>
-                        Registrada: {formatDate(f.createdAt)}
-                      </Text>
-                      <Text style={styles.cardDate}>
-                        Coordenadas: {f.latitud.toFixed(4)}, {f.longitud.toFixed(4)}
-                      </Text>
-                    </View>
-                    <View style={[styles.farmBadge, f.activa ? styles.farmBadgeActive : styles.farmBadgeInactive]}>
-                      <Text style={[styles.farmBadgeText, f.activa ? styles.farmBadgeTextActive : styles.farmBadgeTextInactive]}>
-                        {f.activa ? 'Activa' : 'Inactiva'}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, f.activa ? styles.rejectBtn : styles.verifyBtn]}
-                      onPress={() => handleToggleFarmacia(f.id, !f.activa)}
-                      disabled={actioning === f.id}
-                    >
-                      {actioning === f.id ? (
-                        <ActivityIndicator color={f.activa ? '#D32F2F' : '#FFFFFF'} size="small" />
-                      ) : (
-                        <Text style={f.activa ? styles.rejectText : styles.verifyText}>
-                          {f.activa ? 'Desactivar' : 'Activar'}
+                        {f.telefono && (
+                          <View style={styles.metaRow}>
+                            <Phone size={12} color={theme.colors.textSecondary} />
+                            <Text style={styles.cardPharm}>{f.telefono}</Text>
+                          </View>
+                        )}
+                        {f.horario && (
+                          <View style={styles.metaRow}>
+                            <Clock size={12} color={theme.colors.textSecondary} />
+                            <Text style={styles.cardPharm}>{f.horario}</Text>
+                          </View>
+                        )}
+                        <Text style={styles.cardDate}>
+                          {t.moderation.registered}: {formatDate(f.createdAt)}
                         </Text>
-                      )}
-                    </TouchableOpacity>
+                        <Text style={styles.cardDate}>
+                          {t.moderation.coordinates}: {f.latitud.toFixed(4)}, {f.longitud.toFixed(4)}
+                        </Text>
+                      </View>
+                      <View style={[styles.farmBadge, f.activa ? styles.farmBadgeActive : styles.farmBadgeInactive]}>
+                        <Text style={[styles.farmBadgeText, f.activa ? styles.farmBadgeTextActive : styles.farmBadgeTextInactive]}>
+                          {f.activa ? t.moderation.active : t.moderation.inactive}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.actions}>
+                      <PressableScale
+                        style={[styles.actionBtn, f.activa ? styles.rejectBtn : styles.verifyBtn]}
+                        onPress={() => handleToggleFarmacia(f.id, !f.activa)}
+                        disabled={actioning === f.id}
+                      >
+                        {actioning === f.id ? (
+                          <ActivityIndicator color={f.activa ? theme.colors.danger : theme.colors.accentText} size="small" />
+                        ) : (
+                          <Text style={f.activa ? styles.rejectText : styles.verifyText}>
+                            {f.activa ? t.moderation.deactivate : t.moderation.activate}
+                          </Text>
+                        )}
+                      </PressableScale>
+                    </View>
                   </View>
-                </View>
+                </Reveal>
               ));
             })()}
           </>
         ) : activeTab === 'solicitudes' && isAdmin ? (
           solicitudes.length === 0 ? (
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyEmoji}>✅</Text>
-              <Text style={styles.emptyTitle}>No hay solicitudes pendientes</Text>
-              <Text style={styles.emptyText}>
-                Todas las solicitudes de registro de farmacias han sido procesadas.
-              </Text>
+              <View style={styles.emptyIconBubble}>
+                <Check size={32} color={theme.colors.accent} />
+              </View>
+              <Text style={styles.emptyTitle}>{t.moderation.noRequests}</Text>
+              <Text style={styles.emptyText}>{t.moderation.noRequestsDesc}</Text>
             </View>
           ) : (
-            solicitudes.map((s) => (
-              <View key={s.id} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <View style={[styles.cardIconBox, { backgroundColor: '#FFF3E0' }]}>
-                    <Store size={20} color="#E65100" />
+            solicitudes.map((s, idx) => (
+              <Reveal key={s.id} index={idx}>
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.cardIconBox, styles.cardIconBoxWarning]}>
+                      <Store size={20} color={theme.colors.warning} />
+                    </View>
+                    <View style={styles.cardHeaderText}>
+                      <Text style={styles.cardMedName}>{s.nombreComercial}</Text>
+                      <Text style={styles.cardPharm}>RNC: {s.rnc}</Text>
+                      <Text style={styles.cardPharm}>{s.ciudad} · {s.direccion}</Text>
+                      <Text style={styles.cardPharm}>Tel: {s.telefonoFarmacia} · {s.horario}</Text>
+                      <Text style={styles.cardDate}>{t.moderation.owner}: {s.nombrePropietario} · {t.moderation.cedula}: {s.cedulaPropietario}</Text>
+                      <Text style={styles.cardDate}>{formatDate(s.createdAt)}</Text>
+                      {s.documentoUrl && (
+                        <PressableScale
+                          style={styles.docLink}
+                          onPress={() => {
+                            if (Platform.OS === 'web') window.open(s.documentoUrl!, '_blank');
+                            else Linking.openURL(s.documentoUrl!);
+                          }}
+                        >
+                          <Download size={14} color={theme.colors.accent} />
+                          <Text style={styles.docLinkText}>{t.moderation.viewDocument}</Text>
+                        </PressableScale>
+                      )}
+                    </View>
                   </View>
-                  <View style={styles.cardHeaderText}>
-                    <Text style={styles.cardMedName}>{s.nombreComercial}</Text>
-                    <Text style={styles.cardPharm}>RNC: {s.rnc}</Text>
-                    <Text style={styles.cardPharm}>{s.ciudad} · {s.direccion}</Text>
-                    <Text style={styles.cardPharm}>Tel: {s.telefonoFarmacia} · {s.horario}</Text>
-                    <Text style={styles.cardDate}>Propietario: {s.nombrePropietario} · Cédula: {s.cedulaPropietario}</Text>
-                    <Text style={styles.cardDate}>{formatDate(s.createdAt)}</Text>
-                    {s.documentoUrl && (
-                      <TouchableOpacity
-                        style={styles.docLink}
-                        onPress={() => {
-                          if (Platform.OS === 'web') window.open(s.documentoUrl!, '_blank');
-                          else Linking.openURL(s.documentoUrl!);
-                        }}
-                      >
-                        <Download size={14} color="#34C26A" />
-                        <Text style={styles.docLinkText}>Ver documento adjunto</Text>
-                      </TouchableOpacity>
-                    )}
+                  <View style={styles.actions}>
+                    <PressableScale
+                      style={[styles.actionBtn, styles.rejectBtn]}
+                      onPress={() => handleRechazarSolicitud(s.id)}
+                      disabled={actioning === s.id}
+                    >
+                      {actioning === s.id ? (
+                        <ActivityIndicator color={theme.colors.danger} size="small" />
+                      ) : (
+                        <>
+                          <X size={18} color={theme.colors.danger} />
+                          <Text style={styles.rejectText}>{t.moderation.reject}</Text>
+                        </>
+                      )}
+                    </PressableScale>
+                    <PressableScale
+                      style={[styles.actionBtn, styles.verifyBtn]}
+                      onPress={() => handleAprobarSolicitud(s.id)}
+                      disabled={actioning === s.id}
+                    >
+                      {actioning === s.id ? (
+                        <ActivityIndicator color={theme.colors.accentText} size="small" />
+                      ) : (
+                        <>
+                          <Check size={18} color={theme.colors.accentText} />
+                          <Text style={styles.verifyText}>{t.moderation.approve}</Text>
+                        </>
+                      )}
+                    </PressableScale>
                   </View>
                 </View>
-                <View style={styles.actions}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.rejectBtn]}
-                    onPress={() => handleRechazarSolicitud(s.id)}
-                    disabled={actioning === s.id}
-                  >
-                    {actioning === s.id ? (
-                      <ActivityIndicator color="#D32F2F" size="small" />
-                    ) : (
-                      <>
-                        <X size={18} color="#D32F2F" />
-                        <Text style={styles.rejectText}>Rechazar</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.verifyBtn]}
-                    onPress={() => handleAprobarSolicitud(s.id)}
-                    disabled={actioning === s.id}
-                  >
-                    {actioning === s.id ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <>
-                        <Check size={18} color="#FFFFFF" />
-                        <Text style={styles.verifyText}>Aprobar</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
+              </Reveal>
             ))
           )
         ) : reports.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyEmoji}>✅</Text>
-            <Text style={styles.emptyTitle}>No hay reportes pendientes</Text>
+            <View style={styles.emptyIconBubble}>
+              <Check size={32} color={theme.colors.accent} />
+            </View>
+            <Text style={styles.emptyTitle}>{t.moderation.noReports}</Text>
             <Text style={styles.emptyText}>
-              {isAdmin
-                ? 'Todos los reportes enviados por la comunidad han sido procesados.'
-                : 'No hay reportes de precios pendientes en tu farmacia.'}
+              {isAdmin ? t.moderation.noReportsAdmin : t.moderation.noReportsPharmacy}
             </Text>
           </View>
         ) : (
-          reports.map((r) => (
-            <View key={r.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardIconBox}>
-                  <Text style={styles.cardIcon}>💊</Text>
+          reports.map((r, idx) => (
+            <Reveal key={r.id} index={idx}>
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardIconBox}>
+                    <Text style={styles.cardIcon}>💊</Text>
+                  </View>
+                  <View style={styles.cardHeaderText}>
+                    <Text style={styles.cardMedName}>
+                      {r.medicationName} {r.medicationDosage}
+                    </Text>
+                    <Text style={styles.cardPharm}>
+                      {r.pharmacyName} · {r.pharmacyCity}
+                    </Text>
+                    <Text style={styles.cardDate}>{formatDate(r.createdAt)}</Text>
+                  </View>
+                  <Text style={styles.cardPrice}>RD${r.price.toFixed(2)}</Text>
                 </View>
-                <View style={styles.cardHeaderText}>
-                  <Text style={styles.cardMedName}>
-                    {r.medicationName} {r.medicationDosage}
-                  </Text>
-                  <Text style={styles.cardPharm}>
-                    {r.pharmacyName} · {r.pharmacyCity}
-                  </Text>
-                  <Text style={styles.cardDate}>{formatDate(r.createdAt)}</Text>
-                </View>
-                <Text style={styles.cardPrice}>RD${r.price.toFixed(2)}</Text>
-              </View>
 
-              {r.photoUrl ? (
-                <Image
-                  source={{ uri: r.photoUrl }}
-                  style={styles.photo}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.noPhoto}>
-                  <CameraIcon size={18} color="#999" />
-                  <Text style={styles.noPhotoText}>Reporte sin foto</Text>
-                </View>
-              )}
+                {r.photoUrl ? (
+                  <Image
+                    source={{ uri: r.photoUrl }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.noPhoto}>
+                    <CameraIcon size={18} color={theme.colors.textMuted} />
+                    <Text style={styles.noPhotoText}>{t.moderation.reportNoPhoto}</Text>
+                  </View>
+                )}
 
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.rejectBtn]}
-                  onPress={() => handleReject(r.id)}
-                  disabled={actioning === r.id}
-                >
-                  {actioning === r.id ? (
-                    <ActivityIndicator color="#D32F2F" size="small" />
-                  ) : (
-                    <>
-                      <X size={18} color="#D32F2F" />
-                      <Text style={styles.rejectText}>Rechazar</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.verifyBtn]}
-                  onPress={() => handleVerify(r.id)}
-                  disabled={actioning === r.id}
-                >
-                  {actioning === r.id ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <>
-                      <Check size={18} color="#FFFFFF" />
-                      <Text style={styles.verifyText}>Verificar</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.actions}>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.rejectBtn]}
+                    onPress={() => handleReject(r.id)}
+                    disabled={actioning === r.id}
+                  >
+                    {actioning === r.id ? (
+                      <ActivityIndicator color={theme.colors.danger} size="small" />
+                    ) : (
+                      <>
+                        <X size={18} color={theme.colors.danger} />
+                        <Text style={styles.rejectText}>{t.moderation.reject}</Text>
+                      </>
+                    )}
+                  </PressableScale>
+                  <PressableScale
+                    style={[styles.actionBtn, styles.verifyBtn]}
+                    onPress={() => handleVerify(r.id)}
+                    disabled={actioning === r.id}
+                  >
+                    {actioning === r.id ? (
+                      <ActivityIndicator color={theme.colors.accentText} size="small" />
+                    ) : (
+                      <>
+                        <Check size={18} color={theme.colors.accentText} />
+                        <Text style={styles.verifyText}>{t.moderation.verify}</Text>
+                      </>
+                    )}
+                  </PressableScale>
+                </View>
               </View>
-            </View>
+            </Reveal>
           ))
         )}
       </ScrollView>
@@ -608,207 +657,316 @@ export default function ModerationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  header: { paddingTop: 60, paddingBottom: 24, paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  header: {
+    paddingTop: 54,
+    paddingBottom: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
+  },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: theme.spacing.md,
   },
   headerBadge: {
     flexDirection: 'row',
     gap: 6,
     alignItems: 'center',
-    backgroundColor: 'rgba(52, 194, 106,0.15)',
-    paddingHorizontal: 10,
+    backgroundColor: theme.colors.accentSoft,
+    paddingHorizontal: theme.spacing.md,
     paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(52, 194, 106,0.3)',
+    borderRadius: theme.radius.pill,
   },
   headerBadgeText: {
-    fontFamily: 'DMSans-Bold',
+    ...theme.text.label,
+    fontFamily: theme.font.bodyBold,
     fontSize: 12,
-    color: '#34C26A',
+    letterSpacing: 0.2,
+    color: theme.colors.accent,
   },
-  headerTitle: { fontFamily: 'Poppins-Bold', fontSize: 26, color: '#FFFFFF' },
+  headerTitle: {
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+  },
   headerSubtitle: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
     marginTop: 4,
   },
   statsBar: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.lg,
   },
   statBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    ...theme.shadow.card,
   },
-  statValue: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-  statLabel: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  tabBar: {
-    flexDirection: 'row', gap: 8, marginTop: 16,
-  },
-  tab: {
-    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  tabActive: { backgroundColor: '#FFFFFF' },
-  tabText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  tabTextActive: { color: '#106B4F' },
-  filterRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 14, height: 44,
-    marginBottom: 16, borderWidth: 1, borderColor: '#E0E0E0',
-  },
-  filterInput: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 14, color: '#052419' },
-  farmBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
-  farmBadgeActive: { backgroundColor: '#E8F5E9' },
-  farmBadgeInactive: { backgroundColor: '#FFEBEE' },
-  farmBadgeText: { fontFamily: 'DMSans-Bold', fontSize: 10 },
-  farmBadgeTextActive: { color: '#106B4F' },
-  farmBadgeTextInactive: { color: '#D32F2F' },
-  instructionText: {
-    fontFamily: 'DMSans-Regular', fontSize: 13, color: '#333', lineHeight: 22,
-  },
-  instructionColumns: {
-    fontFamily: 'DMSans-Regular', fontSize: 11, color: '#999', marginTop: 8,
-    backgroundColor: '#F8F9FA', padding: 8, borderRadius: 6,
-  },
-  docLink: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(52, 194, 106,0.1)', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 8, alignSelf: 'flex-start', marginTop: 4,
-  },
-  docLinkText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#34C26A' },
-  content: { flex: 1 },
-  contentInner: { padding: 20, paddingBottom: 40 },
-  loadingBox: { padding: 40, alignItems: 'center' },
-  emptyBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 32,
+  statIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyEmoji: { fontSize: 48, marginBottom: 8 },
+  statValue: {
+    fontFamily: theme.font.bold,
+    fontSize: 20,
+    color: theme.colors.textPrimary,
+  },
+  statLabel: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.lg,
+    paddingRight: theme.spacing.xs,
+  },
+  tab: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
+  },
+  tabActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  tabText: {
+    ...theme.text.bodyMedium,
+    fontFamily: theme.font.bodyBold,
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+  },
+  tabTextActive: { color: theme.colors.accentText },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 48,
+    marginBottom: theme.spacing.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  filterInput: {
+    flex: 1,
+    fontFamily: theme.font.body,
+    fontSize: 14,
+    color: theme.colors.textPrimary,
+    height: '100%',
+  },
+  farmBadge: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    alignSelf: 'flex-start',
+  },
+  farmBadgeActive: { backgroundColor: theme.colors.accentSoft },
+  farmBadgeInactive: { backgroundColor: theme.colors.dangerSoft },
+  farmBadgeText: { ...theme.text.label, fontSize: 10 },
+  farmBadgeTextActive: { color: theme.colors.accent },
+  farmBadgeTextInactive: { color: theme.colors.danger },
+  resultCard: {
+    backgroundColor: theme.colors.accentSoft,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    ...theme.shadow.card,
+  },
+  resultText: {
+    ...theme.text.bodyMedium,
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
+  },
+  instructionCard: {
+    backgroundColor: theme.colors.accentSofter,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.accentSoft,
+  },
+  instructionText: {
+    ...theme.text.body,
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    lineHeight: 22,
+  },
+  instructionNote: {
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.accent,
+    marginTop: 6,
+  },
+  instructionColumns: {
+    ...theme.text.caption,
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: theme.spacing.sm,
+    backgroundColor: theme.colors.bgSecondary,
+    padding: theme.spacing.sm,
+    borderRadius: theme.radius.xs,
+  },
+  docLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.accentSofter,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 5,
+    borderRadius: theme.radius.sm,
+    alignSelf: 'flex-start',
+    marginTop: theme.spacing.sm,
+  },
+  docLinkText: {
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
+  },
+  content: { flex: 1 },
+  contentInner: { paddingHorizontal: theme.spacing.xl, paddingBottom: theme.spacing.huge },
+  scrollContent: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: 54,
+    flexGrow: 1,
+  },
+  loadingBox: { padding: theme.spacing.huge, alignItems: 'center' },
+  emptyBox: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.xxl,
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    ...theme.shadow.card,
+  },
+  emptyIconBubble: {
+    width: 64,
+    height: 64,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
   emptyTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 16,
-    color: '#052419',
+    ...theme.text.h3,
+    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   emptyText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
     textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 20,
   },
   emptyInfo: {
-    flex: 1,
-    justifyContent: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.xxl,
     alignItems: 'center',
-    padding: 32,
-    gap: 12,
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.lg,
+    ...theme.shadow.card,
   },
   emptyInfoTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
-    color: '#052419',
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   emptyInfoText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: '#666666',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md },
   cardIconBox: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0F9F4',
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.accentSofter,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  cardIconBoxInactive: { backgroundColor: theme.colors.dangerSoft },
+  cardIconBoxWarning: { backgroundColor: theme.colors.warningSoft },
   cardIcon: { fontSize: 20 },
   cardHeaderText: { flex: 1 },
-  cardMedName: { fontFamily: 'DMSans-Bold', fontSize: 15, color: '#052419' },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  cardMedName: {
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
+  },
   cardPharm: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   cardDate: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.caption,
     fontSize: 11,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   cardPrice: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 18,
-    color: '#106B4F',
+    color: theme.colors.accent,
   },
   photo: {
     width: '100%',
     height: 180,
-    borderRadius: 10,
-    marginTop: 12,
-    backgroundColor: '#F0F0F0',
+    borderRadius: theme.radius.md,
+    marginTop: theme.spacing.md,
+    backgroundColor: theme.colors.bgSecondary,
   },
   noPhoto: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 10,
-    marginTop: 12,
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.bgSecondary,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.md,
+    marginTop: theme.spacing.md,
     borderStyle: 'dashed',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: theme.colors.border,
   },
   noPhotoText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#999',
+    ...theme.text.caption,
+    color: theme.colors.textMuted,
   },
   actions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.md,
   },
   actionBtn: {
     flex: 1,
@@ -816,19 +974,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
   },
   rejectBtn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.dangerSoft,
     borderWidth: 1,
-    borderColor: '#D32F2F',
+    borderColor: theme.colors.danger,
   },
   rejectText: {
-    fontFamily: 'DMSans-Bold',
+    fontFamily: theme.font.bodyBold,
     fontSize: 14,
-    color: '#D32F2F',
+    color: theme.colors.danger,
   },
-  verifyBtn: { backgroundColor: '#106B4F' },
-  verifyText: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#FFFFFF' },
+  verifyBtn: {
+    backgroundColor: theme.colors.accent,
+    ...theme.shadow.accent,
+  },
+  verifyText: {
+    fontFamily: theme.font.bodyBold,
+    fontSize: 14,
+    color: theme.colors.accentText,
+  },
+  importBtn: {
+    backgroundColor: theme.colors.infoSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.info,
+  },
+  importText: {
+    fontFamily: theme.font.bodyBold,
+    fontSize: 14,
+    color: theme.colors.info,
+  },
 });

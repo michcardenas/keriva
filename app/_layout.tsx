@@ -1,5 +1,5 @@
 import '../global.css';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SplashScreen } from 'expo-router';
@@ -36,13 +36,24 @@ export default function RootLayout() {
     'DMSans-Bold': DMSans_700Bold,
   });
 
+  // Fallback de seguridad: si las fuentes no resuelven a tiempo (p. ej. en un
+  // navegador sin acceso a los assets), no dejamos la app en blanco para
+  // siempre. Tras 1.5s renderizamos igual; las fuentes aparecen al cargar.
+  const [fontTimeout, setFontTimeout] = useState(false);
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    const id = setTimeout(() => setFontTimeout(true), 1500);
+    return () => clearTimeout(id);
+  }, []);
+
+  const ready = fontsLoaded || fontError || fontTimeout;
+
+  useEffect(() => {
+    if (ready) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [ready]);
 
-  if (!fontsLoaded && !fontError) {
+  if (!ready) {
     return null;
   }
 
@@ -72,7 +83,7 @@ export default function RootLayout() {
 const PROTECTED_TABS = new Set(['report', 'profile', 'moderation']);
 
 function RootNavigator() {
-  const { session, loading } = useAuth();
+  const { session, loading, perfil } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -89,16 +100,25 @@ function RootNavigator() {
       const isProtectedTab =
         first === '(tabs)' && typeof second === 'string' && PROTECTED_TABS.has(second);
       if (isProtectedTab) {
-        // Guests hitting a protected tab go straight to the register form.
-        // The register screen has a link back to /auth/login for users that
-        // already have an account.
-        router.replace('/auth/register');
+        // Guests hitting a protected tab go to LOGIN (no al registro). El login
+        // tiene enlace a "crear cuenta" para quienes aún no tienen una. Esto
+        // también arregla que tras cerrar sesión cayeras en el registro.
+        router.replace('/auth/login');
       }
     } else if (inAuthGroup || onSplash) {
-      // Logged in user on auth/splash → send to tabs
-      router.replace('/(tabs)');
+      // Logged in → a sus tabs. La farmacia aterriza en su hub "Mi Farmacia"
+      // (Buscar/Mapa están ocultos para ese rol).
+      router.replace(perfil?.rol === 'farmacia' ? '/(tabs)/farmacia' : '/(tabs)');
+    } else if (
+      perfil?.rol === 'farmacia' &&
+      first === '(tabs)' &&
+      (second === undefined || second === 'map')
+    ) {
+      // El perfil carga async: si la farmacia quedó en Buscar/Mapa (ocultos
+      // para su rol), reencauzar a su hub.
+      router.replace('/(tabs)/farmacia');
     }
-  }, [session, loading, segments, router]);
+  }, [session, loading, segments, router, perfil?.rol]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -108,6 +128,14 @@ function RootNavigator() {
       <Stack.Screen name="detail" />
       <Stack.Screen name="registro-farmacia" />
       <Stack.Screen name="familia" />
+      <Stack.Screen name="farmacia/sucursales" />
+      <Stack.Screen name="farmacia/inventario" />
+      <Stack.Screen name="farmacia/carga-masiva" />
+      <Stack.Screen name="farmacia/descuentos" />
+      <Stack.Screen name="farmacia/reservas" />
+      <Stack.Screen name="farmacia/metricas" />
+      <Stack.Screen name="farmacia/cuenta" />
+      <Stack.Screen name="resenas/[farmaciaId]" />
       <Stack.Screen name="+not-found" />
     </Stack>
   );

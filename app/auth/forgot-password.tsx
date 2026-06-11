@@ -4,28 +4,31 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail } from 'lucide-react-native';
+import { ArrowLeft, Mail, MailCheck } from 'lucide-react-native';
 import { sendPasswordResetEmail } from '@/lib/api/auth';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   async function handleSubmit() {
     setError(null);
     if (!email.trim()) {
-      setError('Ingresa tu correo electrónico');
+      setError(t.auth.enterEmail);
       return;
     }
     setLoading(true);
@@ -39,179 +42,219 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft color="#FFFFFF" size={24} />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+          <ArrowLeft color={theme.colors.textPrimary} size={22} />
+        </PressableScale>
 
-          <View style={styles.header}>
-            <Text style={styles.title}>Recuperar contraseña</Text>
-            <Text style={styles.subtitle}>
-              Te enviaremos un enlace para restablecer tu contraseña
-            </Text>
-          </View>
-
-          {sent ? (
-            <View style={styles.successBox}>
-              <Text style={styles.successEmoji}>📧</Text>
-              <Text style={styles.successTitle}>Correo enviado</Text>
+        {sent ? (
+          <View style={styles.successBox}>
+            <Reveal variant="up" delay={60}>
+              <View style={styles.successBadge}>
+                <MailCheck color={theme.colors.white} size={44} />
+              </View>
+            </Reveal>
+            <Reveal index={1} delay={120}>
+              <Text style={styles.successTitle}>{t.auth.emailSent}</Text>
+            </Reveal>
+            <Reveal index={2} delay={160}>
               <Text style={styles.successText}>
-                Revisa la bandeja de entrada de <Text style={styles.emailBold}>{email}</Text>.
-                Si no lo encuentras, revisa también tu carpeta de spam.
+                {t.auth.checkInbox} <Text style={styles.emailBold}>{email}</Text>
+                {t.auth.checkSpam}
               </Text>
-              <TouchableOpacity
+            </Reveal>
+            <Reveal index={3} delay={200} style={styles.successButtonWrap}>
+              <PressableScale
                 style={styles.primaryButton}
                 onPress={() => router.replace('/auth/login')}
               >
-                <Text style={styles.primaryButtonText}>Volver a iniciar sesión</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.form}>
-              <View style={styles.inputWrapper}>
-                <Mail size={20} color="rgba(255,255,255,0.6)" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Correo electrónico"
-                  placeholderTextColor="rgba(255,255,255,0.5)"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!loading}
-                />
+                <Text style={styles.primaryButtonText}>{t.auth.backToLogin}</Text>
+              </PressableScale>
+            </Reveal>
+          </View>
+        ) : (
+          <>
+            <Reveal variant="up" delay={60}>
+              <View style={styles.header}>
+                <Text style={styles.title}>{t.auth.recoverPassword}</Text>
+                <Text style={styles.subtitle}>{t.auth.recoverSubtitle}</Text>
               </View>
+            </Reveal>
 
-              {error && <Text style={styles.errorText}>{error}</Text>}
+            <View style={styles.form}>
+              <Reveal index={1} delay={120}>
+                <View style={[styles.inputWrapper, focused && styles.inputFocused]}>
+                  <Mail size={20} color={focused ? theme.colors.accent : theme.colors.textMuted} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t.auth.email}
+                    placeholderTextColor={theme.colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={setEmail}
+                    editable={!loading}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                  />
+                </View>
+              </Reveal>
 
-              <TouchableOpacity
-                style={[styles.primaryButton, loading && styles.buttonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#106B4F" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Enviar enlace</Text>
-                )}
-              </TouchableOpacity>
+              {error && (
+                <Reveal variant="fade">
+                  <Text style={styles.errorText}>{error}</Text>
+                </Reveal>
+              )}
 
-              <TouchableOpacity
-                style={styles.linkButton}
-                onPress={() => router.replace('/auth/login')}
-                disabled={loading}
-              >
-                <Text style={styles.linkText}>
-                  ¿Recordaste tu contraseña? <Text style={styles.linkTextBold}>Inicia sesión</Text>
-                </Text>
-              </TouchableOpacity>
+              <Reveal index={2} delay={160}>
+                <PressableScale
+                  style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={theme.colors.white} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>{t.auth.sendLink}</Text>
+                  )}
+                </PressableScale>
+              </Reveal>
+
+              <Reveal index={3} delay={200}>
+                <PressableScale
+                  style={styles.linkButton}
+                  onPress={() => router.replace('/auth/login')}
+                  disabled={loading}
+                >
+                  <Text style={styles.linkText}>
+                    {t.auth.rememberedPassword}
+                    <Text style={styles.linkTextBold}>{t.auth.signIn}</Text>
+                  </Text>
+                </PressableScale>
+              </Reveal>
             </View>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+          </>
+        )}
+      </KeyboardAwareScreen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: { flexGrow: 1, padding: theme.spacing.xxl, paddingTop: 50 },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: theme.spacing.xxl,
+    ...theme.shadow.sm,
   },
-  header: { marginBottom: 40 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 32, color: '#FFFFFF' },
+  header: { marginBottom: theme.spacing.huge },
+  title: {
+    ...theme.text.display,
+    color: theme.colors.textPrimary,
+  },
   subtitle: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 8,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.sm,
   },
-  form: { gap: 16 },
+  form: { gap: theme.spacing.lg },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 54,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
   },
   input: {
     flex: 1,
-    fontFamily: 'DMSans-Regular',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
   },
   errorText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#FF6B6B',
+    color: theme.colors.danger,
     textAlign: 'center',
   },
   primaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: theme.spacing.xs,
+    ...theme.shadow.accent,
   },
   buttonDisabled: { opacity: 0.7 },
   primaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 16,
-    color: '#106B4F',
+    color: theme.colors.white,
+    letterSpacing: 0.3,
   },
-  linkButton: { alignItems: 'center', paddingVertical: 12 },
+  linkButton: { alignItems: 'center', paddingVertical: theme.spacing.md },
   linkText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
   },
   linkTextBold: {
-    fontFamily: 'DMSans-Bold',
-    color: '#34C26A',
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
   },
   successBox: {
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xxl,
   },
-  successEmoji: { fontSize: 64 },
+  successBadge: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+    ...theme.shadow.accent,
+  },
   successTitle: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 22,
-    color: '#FFFFFF',
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
   },
   successText: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.85)',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 16,
+    marginBottom: theme.spacing.lg,
   },
   emailBold: {
-    fontFamily: 'DMSans-Bold',
-    color: '#34C26A',
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
   },
+  successButtonWrap: { alignSelf: 'stretch' },
 });

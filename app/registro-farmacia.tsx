@@ -4,21 +4,23 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Modal,
   FlatList,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Store, MapPin, Clock, Phone, User, FileText, ChevronDown, Paperclip, X } from 'lucide-react-native';
+import { ArrowLeft, Store, MapPin, Clock, Phone, User, FileText, ChevronDown, Paperclip, X, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Eye } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/lib/AuthContext';
-import { createSolicitud, getMySolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
+import { createSolicitud, getMySolicitud, reenviarSolicitud, type SolicitudFarmacia } from '@/lib/api/solicitudes';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
 const SANTIAGO_CENTER: [number, number] = [-70.6970, 19.4517];
@@ -73,8 +75,19 @@ function formatDocRD(value: string): string {
 
 const DOC_REGEX = /^\d{3}-\d{7}-\d{1}$/;
 
+type Field =
+  | 'nombre'
+  | 'rnc'
+  | 'direccion'
+  | 'ciudad'
+  | 'telefono'
+  | 'horario'
+  | 'propietario'
+  | 'cedula';
+
 export default function RegistroFarmaciaScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { session, user, perfil } = useAuth();
 
   const [nombreComercial, setNombreComercial] = useState('');
@@ -85,6 +98,7 @@ export default function RegistroFarmaciaScreen() {
   const [horario, setHorario] = useState('');
   const [nombrePropietario, setNombrePropietario] = useState('');
   const [cedulaPropietario, setCedulaPropietario] = useState('');
+  const [focused, setFocused] = useState<Field | null>(null);
 
   const [latitud, setLatitud] = useState<number | null>(null);
   const [longitud, setLongitud] = useState<number | null>(null);
@@ -92,8 +106,11 @@ export default function RegistroFarmaciaScreen() {
   const mapInstanceRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
 
-  const [documentoUri, setDocumentoUri] = useState<string | null>(null);
-  const [documentoName, setDocumentoName] = useState<string | null>(null);
+  const [docs, setDocs] = useState<{
+    licencia: { uri: string; name: string } | null;
+    registro: { uri: string; name: string } | null;
+    cedula: { uri: string; name: string } | null;
+  }>({ licencia: null, registro: null, cedula: null });
   const [showCiudadPicker, setShowCiudadPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,12 +121,27 @@ export default function RegistroFarmaciaScreen() {
   useEffect(() => {
     if (!user) { setCheckingExisting(false); return; }
     getMySolicitud(user.id).then((s) => {
-      if (s && (s.estado === 'pendiente' || s.estado === 'aprobada')) {
+      // Cualquier solicitud "viva" muestra su estado; solo 'rechazada' deja
+      // volver al formulario para postular de nuevo desde cero.
+      if (s && s.estado !== 'rechazada') {
         setExistingSolicitud(s);
       }
       setCheckingExisting(false);
     });
   }, [user]);
+
+  const [reenviando, setReenviando] = useState(false);
+  const handleReenviar = useCallback(async () => {
+    if (!user || !existingSolicitud) return;
+    setReenviando(true);
+    const res = await reenviarSolicitud(user.id, existingSolicitud.id, {});
+    setReenviando(false);
+    if (res.ok) {
+      setExistingSolicitud({ ...existingSolicitud, estado: 'pendiente', observaciones: null });
+    } else {
+      setError(res.error ?? 'No se pudo reenviar.');
+    }
+  }, [user, existingSolicitud]);
 
   // Init mini-map for location picking
   useEffect(() => {
@@ -142,7 +174,7 @@ export default function RegistroFarmaciaScreen() {
         if (markerRef.current) markerRef.current.remove();
 
         const el = document.createElement('div');
-        el.style.cssText = 'width:32px;height:32px;border-radius:50%;background:#34C26A;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);';
+        el.style.cssText = `width:32px;height:32px;border-radius:50%;background:${theme.colors.accent};border:3px solid ${theme.colors.white};box-shadow:0 2px 6px rgba(0,0,0,0.35);`;
 
         markerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([lng, lat])
@@ -162,26 +194,26 @@ export default function RegistroFarmaciaScreen() {
   }, [checkingExisting, existingSolicitud, success]);
 
   const validate = useCallback((): string | null => {
-    if (!nombreComercial.trim()) return 'Ingresa el nombre de la farmacia';
-    if (!DOC_REGEX.test(rnc)) return 'RNC inválido (formato: XXX-XXXXXXX-X)';
-    if (!direccion.trim()) return 'Ingresa la dirección';
-    if (!ciudad) return 'Selecciona la ciudad';
-    if (!telefono.trim()) return 'Ingresa el teléfono';
-    if (!horario.trim()) return 'Ingresa el horario';
-    if (!nombrePropietario.trim()) return 'Ingresa el nombre del propietario';
-    if (!DOC_REGEX.test(cedulaPropietario)) return 'Cédula inválida (formato: XXX-XXXXXXX-X)';
+    if (!nombreComercial.trim()) return t.registro.errNombre;
+    if (!DOC_REGEX.test(rnc)) return t.registro.errRnc;
+    if (!direccion.trim()) return t.registro.errDireccion;
+    if (!ciudad) return t.registro.errCiudad;
+    if (!telefono.trim()) return t.registro.errTelefono;
+    if (!horario.trim()) return t.registro.errHorario;
+    if (!nombrePropietario.trim()) return t.registro.errPropietario;
+    if (!DOC_REGEX.test(cedulaPropietario)) return t.registro.errCedula;
     return null;
-  }, [nombreComercial, rnc, direccion, ciudad, telefono, horario, nombrePropietario, cedulaPropietario]);
+  }, [nombreComercial, rnc, direccion, ciudad, telefono, horario, nombrePropietario, cedulaPropietario, t]);
 
-  async function pickDocument() {
+  async function pickDoc(kind: 'licencia' | 'registro' | 'cedula') {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setDocumentoUri(result.assets[0].uri);
-      setDocumentoName(result.assets[0].fileName ?? 'documento.jpg');
+      const a = result.assets[0];
+      setDocs((d) => ({ ...d, [kind]: { uri: a.uri, name: a.fileName ?? 'documento.jpg' } }));
     }
   }
 
@@ -202,7 +234,9 @@ export default function RegistroFarmaciaScreen() {
       horario: horario.trim(),
       nombrePropietario: nombrePropietario.trim(),
       cedulaPropietario,
-      documentoUri,
+      docLicenciaUri: docs.licencia?.uri,
+      docRegistroUri: docs.registro?.uri,
+      docCedulaUri: docs.cedula?.uri,
       latitud: latitud ?? undefined,
       longitud: longitud ?? undefined,
     });
@@ -212,13 +246,16 @@ export default function RegistroFarmaciaScreen() {
     setSuccess(true);
   }
 
+  const iconColor = (field: Field) =>
+    focused === field ? theme.colors.accent : theme.colors.textMuted;
+
   // Guard: not authenticated
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Store size={56} color="#34C26A" />}
-        title="Registra tu farmacia"
-        description="Inicia sesión para solicitar el registro de tu farmacia en Keriva."
+        icon={<Store size={56} color={theme.colors.accent} />}
+        title={t.registro.authTitle}
+        description={t.registro.authDesc}
       />
     );
   }
@@ -226,339 +263,666 @@ export default function RegistroFarmaciaScreen() {
   // Guard: already a farmacia or admin
   if (perfil && perfil.rol !== 'usuario') {
     return (
-      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
+      <View style={styles.container}>
+        <PillBackground />
         <View style={styles.centerContent}>
-          <Store size={56} color="#34C26A" />
-          <Text style={styles.centerTitle}>
-            {perfil.rol === 'farmacia' ? 'Ya eres farmacia' : 'Eres administrador'}
-          </Text>
-          <Text style={styles.centerText}>Tu cuenta ya tiene el rol asignado.</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.back()}>
-            <Text style={styles.primaryButtonText}>Volver</Text>
-          </TouchableOpacity>
+          <Reveal variant="up" delay={60}>
+            <View style={styles.centerIconCircle}>
+              <Store size={48} color={theme.colors.white} />
+            </View>
+          </Reveal>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.centerTitle}>
+              {perfil.rol === 'farmacia' ? t.registro.alreadyPharmacy : t.registro.youAreAdmin}
+            </Text>
+          </Reveal>
+          <Reveal index={2} delay={160}>
+            <Text style={styles.centerText}>{t.registro.roleAssigned}</Text>
+          </Reveal>
+          <Reveal index={3} delay={200} style={styles.centerButtonWrap}>
+            <PressableScale style={styles.primaryButton} onPress={() => router.back()}>
+              <Text style={styles.primaryButtonText}>{t.registro.back}</Text>
+            </PressableScale>
+          </Reveal>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   if (checkingExisting) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: '#052419' }]}>
-        <ActivityIndicator size="large" color="#34C26A" />
+      <View style={[styles.container, styles.centerContent]}>
+        <PillBackground />
+        <ActivityIndicator size="large" color={theme.colors.accent} />
       </View>
     );
   }
 
   // Already has pending request
   if (existingSolicitud) {
+    const est = existingSolicitud.estado;
+    const meta =
+      est === 'aprobada'
+        ? { Icon: CheckCircle2, color: theme.colors.success, title: '¡Solicitud aprobada!', text: `"${existingSolicitud.nombreComercial}" ya está activa. Puedes gestionar tu farmacia desde tu perfil.` }
+        : est === 'en_revision'
+        ? { Icon: Eye, color: theme.colors.info, title: 'En revisión', text: `Estamos revisando los datos de "${existingSolicitud.nombreComercial}". Te avisaremos cuando haya una respuesta.` }
+        : est === 'con_observaciones'
+        ? { Icon: AlertTriangle, color: theme.colors.warning, title: 'Necesita correcciones', text: `Revisa las observaciones del administrador y reenvía tu solicitud.` }
+        : { Icon: Clock, color: theme.colors.warning, title: 'Solicitud enviada', text: `Tu solicitud para "${existingSolicitud.nombreComercial}" está pendiente de revisión.` };
+
     return (
-      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-        <View style={styles.inner}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft color="#FFFFFF" size={24} />
-          </TouchableOpacity>
-          <View style={styles.centerContent}>
-            <Clock size={56} color="#FFA726" />
-            <Text style={styles.centerTitle}>Solicitud en revisión</Text>
-            <Text style={styles.centerText}>
-              Tu solicitud para "{existingSolicitud.nombreComercial}" está siendo revisada por nuestro equipo.
-              Te notificaremos cuando sea aprobada.
-            </Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => router.back()}>
-              <Text style={styles.primaryButtonText}>Volver al perfil</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={styles.container}>
+        <PillBackground />
+        <View style={styles.centerContent}>
+          <Reveal variant="up" delay={60}>
+            <View style={[styles.centerIconCircle, { backgroundColor: meta.color }]}>
+              <meta.Icon size={48} color={theme.colors.white} />
+            </View>
+          </Reveal>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.centerTitle}>{meta.title}</Text>
+          </Reveal>
+          <Reveal index={2} delay={160}>
+            <Text style={styles.centerText}>{meta.text}</Text>
+          </Reveal>
+
+          {est === 'con_observaciones' && !!existingSolicitud.observaciones && (
+            <Reveal index={3} delay={190}>
+              <View style={styles.obsBox}>
+                <Text style={styles.obsLabel}>Observaciones del administrador</Text>
+                <Text style={styles.obsText}>{existingSolicitud.observaciones}</Text>
+              </View>
+            </Reveal>
+          )}
+
+          {error && (
+            <Text style={[styles.centerText, { color: theme.colors.danger }]}>{error}</Text>
+          )}
+
+          <Reveal index={4} delay={220} style={styles.centerButtonWrap}>
+            {est === 'con_observaciones' ? (
+              <PressableScale
+                style={[styles.primaryButton, reenviando && { opacity: 0.6 }]}
+                onPress={handleReenviar}
+              >
+                <Text style={styles.primaryButtonText}>{reenviando ? 'Reenviando…' : 'Reenviar solicitud'}</Text>
+              </PressableScale>
+            ) : (
+              <PressableScale style={styles.primaryButton} onPress={() => router.back()}>
+                <Text style={styles.primaryButtonText}>{t.registro.backToProfile}</Text>
+              </PressableScale>
+            )}
+          </Reveal>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   // Success
   if (success) {
     return (
-      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
+      <View style={styles.container}>
+        <PillBackground />
         <View style={styles.centerContent}>
-          <Text style={{ fontSize: 64 }}>✅</Text>
-          <Text style={styles.centerTitle}>¡Solicitud enviada!</Text>
-          <Text style={styles.centerText}>
-            Revisaremos tu solicitud y te notificaremos cuando sea aprobada.
-            Esto usualmente toma 1-2 días hábiles.
-          </Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/(tabs)/profile')}>
-            <Text style={styles.primaryButtonText}>Ir a mi perfil</Text>
-          </TouchableOpacity>
+          <Reveal variant="up" delay={60}>
+            <Text style={styles.successEmoji}>✅</Text>
+          </Reveal>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.centerTitle}>{t.registro.requestSent}</Text>
+          </Reveal>
+          <Reveal index={2} delay={160}>
+            <Text style={styles.centerText}>{t.registro.requestSentDesc}</Text>
+          </Reveal>
+          <Reveal index={3} delay={200} style={styles.centerButtonWrap}>
+            <PressableScale style={styles.primaryButton} onPress={() => router.replace('/(tabs)/profile')}>
+              <Text style={styles.primaryButtonText}>{t.registro.goToProfile}</Text>
+            </PressableScale>
+          </Reveal>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft color="#FFFFFF" size={24} />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <Reveal variant="up" delay={60}>
+          <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+            <ArrowLeft color={theme.colors.textPrimary} size={22} />
+          </PressableScale>
+          <Text style={styles.headerTitle}>{t.registro.title}</Text>
+          <Text style={styles.headerSubtitle}>{t.registro.subtitle}</Text>
+        </Reveal>
 
-          <View style={styles.header}>
-            <Store size={32} color="#34C26A" />
-            <Text style={styles.title}>Registrar farmacia</Text>
-            <Text style={styles.subtitle}>
-              Completa los datos de tu farmacia. Un administrador revisará tu solicitud.
-            </Text>
-          </View>
+        <View style={styles.form}>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.sectionLabel}>{t.registro.pharmacyData}</Text>
+          </Reveal>
 
-          <Text style={styles.sectionLabel}>Datos de la farmacia</Text>
+          <Reveal index={2} delay={160}>
+            <View style={[styles.inputWrapper, focused === 'nombre' && styles.inputFocused]}>
+              <Store size={20} color={iconColor('nombre')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.commercialName}
+                placeholderTextColor={theme.colors.textMuted}
+                value={nombreComercial}
+                onChangeText={setNombreComercial}
+                editable={!submitting}
+                onFocus={() => setFocused('nombre')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
 
-          <View style={styles.inputWrapper}>
-            <Store size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Nombre comercial"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={nombreComercial}
-              onChangeText={setNombreComercial}
-              editable={!submitting}
-            />
-          </View>
+          <Reveal index={3} delay={200}>
+            <View style={[styles.inputWrapper, focused === 'rnc' && styles.inputFocused]}>
+              <FileText size={20} color={iconColor('rnc')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.rncPlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
+                value={rnc}
+                onChangeText={(v) => setRnc(formatDocRD(v))}
+                keyboardType="number-pad"
+                maxLength={13}
+                editable={!submitting}
+                onFocus={() => setFocused('rnc')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
 
-          <View style={styles.inputWrapper}>
-            <FileText size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="RNC (XXX-XXXXXXX-X)"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={rnc}
-              onChangeText={(t) => setRnc(formatDocRD(t))}
-              keyboardType="number-pad"
-              maxLength={13}
-              editable={!submitting}
-            />
-          </View>
+          <Reveal index={4} delay={240}>
+            <View style={[styles.inputWrapper, focused === 'direccion' && styles.inputFocused]}>
+              <MapPin size={20} color={iconColor('direccion')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.fullAddress}
+                placeholderTextColor={theme.colors.textMuted}
+                value={direccion}
+                onChangeText={setDireccion}
+                editable={!submitting}
+                onFocus={() => setFocused('direccion')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
 
-          <View style={styles.inputWrapper}>
-            <MapPin size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Dirección completa"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={direccion}
-              onChangeText={setDireccion}
-              editable={!submitting}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.inputWrapper}
-            onPress={() => setShowCiudadPicker(true)}
-            disabled={submitting}
-          >
-            <MapPin size={18} color="rgba(255,255,255,0.5)" />
-            <Text style={[styles.input, !ciudad && { color: 'rgba(255,255,255,0.4)' }]}>
-              {ciudad || 'Ciudad'}
-            </Text>
-            <ChevronDown size={18} color="rgba(255,255,255,0.5)" />
-          </TouchableOpacity>
+          <Reveal index={5} delay={280}>
+            <PressableScale
+              style={[styles.inputWrapper, !!ciudad && styles.inputFilled]}
+              onPress={() => setShowCiudadPicker(true)}
+              disabled={submitting}
+            >
+              <MapPin size={20} color={ciudad ? theme.colors.accent : theme.colors.textMuted} />
+              <Text style={[styles.input, styles.inputText, !ciudad && styles.inputPlaceholder]}>
+                {ciudad || t.registro.city}
+              </Text>
+              <ChevronDown size={20} color={theme.colors.textMuted} />
+            </PressableScale>
+          </Reveal>
 
           {/* Location picker map */}
           {Platform.OS === 'web' && MAPBOX_TOKEN && (
-            <View style={styles.mapSection}>
-              <Text style={styles.mapLabel}>Ubicación en el mapa (toca para marcar)</Text>
-              <View style={styles.mapContainer}>
-                <div
-                  ref={mapContainerRef}
-                  style={{ width: '100%', height: '100%', borderRadius: 12 }}
-                />
+            <Reveal index={6} delay={320}>
+              <View style={styles.mapSection}>
+                <Text style={styles.mapLabel}>{t.registro.mapLabel}</Text>
+                <View style={styles.mapContainer}>
+                  <div
+                    ref={mapContainerRef}
+                    style={{ width: '100%', height: '100%', borderRadius: theme.radius.md }}
+                  />
+                </View>
+                {latitud && longitud ? (
+                  <Text style={styles.mapCoords}>
+                    {t.registro.locationSelected}: {latitud.toFixed(5)}, {longitud.toFixed(5)}
+                  </Text>
+                ) : (
+                  <Text style={styles.mapHint}>{t.registro.mapHint}</Text>
+                )}
               </View>
-              {latitud && longitud ? (
-                <Text style={styles.mapCoords}>
-                  Ubicación seleccionada: {latitud.toFixed(5)}, {longitud.toFixed(5)}
-                </Text>
+            </Reveal>
+          )}
+
+          <Reveal index={7} delay={360}>
+            <View style={[styles.inputWrapper, focused === 'telefono' && styles.inputFocused]}>
+              <Phone size={20} color={iconColor('telefono')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.phonePlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
+                value={telefono}
+                onChangeText={setTelefono}
+                keyboardType="phone-pad"
+                editable={!submitting}
+                onFocus={() => setFocused('telefono')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
+
+          <Reveal index={8} delay={400}>
+            <View style={[styles.inputWrapper, focused === 'horario' && styles.inputFocused]}>
+              <Clock size={20} color={iconColor('horario')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.schedulePlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
+                value={horario}
+                onChangeText={setHorario}
+                editable={!submitting}
+                onFocus={() => setFocused('horario')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
+
+          <Reveal index={9} delay={440}>
+            <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>{t.registro.ownerData}</Text>
+          </Reveal>
+
+          <Reveal index={10} delay={480}>
+            <View style={[styles.inputWrapper, focused === 'propietario' && styles.inputFocused]}>
+              <User size={20} color={iconColor('propietario')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.ownerName}
+                placeholderTextColor={theme.colors.textMuted}
+                value={nombrePropietario}
+                onChangeText={setNombrePropietario}
+                editable={!submitting}
+                onFocus={() => setFocused('propietario')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
+
+          <Reveal index={11} delay={520}>
+            <View style={[styles.inputWrapper, focused === 'cedula' && styles.inputFocused]}>
+              <FileText size={20} color={iconColor('cedula')} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.registro.cedulaPlaceholder}
+                placeholderTextColor={theme.colors.textMuted}
+                value={cedulaPropietario}
+                onChangeText={(v) => setCedulaPropietario(formatDocRD(v))}
+                keyboardType="number-pad"
+                maxLength={13}
+                editable={!submitting}
+                onFocus={() => setFocused('cedula')}
+                onBlur={() => setFocused(null)}
+              />
+            </View>
+          </Reveal>
+
+          <Reveal index={12} delay={560}>
+            <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>{t.registro.supportDoc}</Text>
+            <Text style={styles.docHint}>{t.registro.supportDocHint}</Text>
+          </Reveal>
+
+          <Reveal index={13} delay={600}>
+            <View style={{ gap: 12 }}>
+              {([
+                ['licencia', 'Licencia de funcionamiento'],
+                ['registro', 'Registro de la droguería / farmacia'],
+                ['cedula', 'Cédula del representante'],
+              ] as const).map(([kind, label]) => {
+                const doc = docs[kind];
+                return (
+                  <View key={kind}>
+                    <Text style={styles.docHint}>{label}</Text>
+                    {doc ? (
+                      <View style={styles.docAttached}>
+                        <Paperclip size={16} color={theme.colors.accent} />
+                        <Text style={styles.docAttachedName} numberOfLines={1}>{doc.name}</Text>
+                        <PressableScale
+                          onPress={() => setDocs((d) => ({ ...d, [kind]: null }))}
+                          scaleTo={0.85}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <X size={18} color={theme.colors.textSecondary} />
+                        </PressableScale>
+                      </View>
+                    ) : (
+                      <PressableScale style={styles.docButton} onPress={() => pickDoc(kind)} disabled={submitting} scaleTo={0.97}>
+                        <Paperclip size={18} color={theme.colors.accent} />
+                        <Text style={styles.docButtonText}>{t.registro.attachDoc}</Text>
+                      </PressableScale>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </Reveal>
+
+          {error && (
+            <Reveal variant="fade">
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            </Reveal>
+          )}
+
+          <Reveal index={14} delay={640}>
+            <PressableScale
+              style={[styles.primaryButton, submitting && styles.buttonDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={theme.colors.white} />
               ) : (
-                <Text style={styles.mapHint}>Toca el mapa para marcar la ubicación de tu farmacia</Text>
+                <Text style={styles.primaryButtonText}>{t.registro.submit}</Text>
               )}
-            </View>
-          )}
-
-          <View style={styles.inputWrapper}>
-            <Phone size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Teléfono (809-000-0000)"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={telefono}
-              onChangeText={setTelefono}
-              keyboardType="phone-pad"
-              editable={!submitting}
-            />
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Clock size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Horario (ej: Lun-Sab 8am-10pm)"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={horario}
-              onChangeText={setHorario}
-              editable={!submitting}
-            />
-          </View>
-
-          <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Datos del propietario</Text>
-
-          <View style={styles.inputWrapper}>
-            <User size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Nombre del propietario"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={nombrePropietario}
-              onChangeText={setNombrePropietario}
-              editable={!submitting}
-            />
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <FileText size={18} color="rgba(255,255,255,0.5)" />
-            <TextInput
-              style={styles.input}
-              placeholder="Cédula (XXX-XXXXXXX-X)"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={cedulaPropietario}
-              onChangeText={(t) => setCedulaPropietario(formatDocRD(t))}
-              keyboardType="number-pad"
-              maxLength={13}
-              editable={!submitting}
-            />
-          </View>
-
-          <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Documento de soporte (opcional)</Text>
-          <Text style={styles.docHint}>RNC, registro mercantil, licencia de operación, etc.</Text>
-
-          {documentoUri ? (
-            <View style={styles.docAttached}>
-              <Paperclip size={16} color="#34C26A" />
-              <Text style={styles.docAttachedName} numberOfLines={1}>{documentoName}</Text>
-              <TouchableOpacity onPress={() => { setDocumentoUri(null); setDocumentoName(null); }}>
-                <X size={18} color="rgba(255,255,255,0.6)" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.docButton} onPress={pickDocument} disabled={submitting}>
-              <Paperclip size={18} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.docButtonText}>Adjuntar imagen o foto del documento</Text>
-            </TouchableOpacity>
-          )}
-
-          {error && <Text style={styles.errorText}>{error}</Text>}
-
-          <TouchableOpacity
-            style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#106B4F" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Enviar solicitud</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+            </PressableScale>
+          </Reveal>
+        </View>
+      </KeyboardAwareScreen>
 
       {/* Ciudad picker modal */}
       <Modal visible={showCiudadPicker} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Selecciona la ciudad</Text>
+            <PillBackground opacity={0.45} />
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>{t.registro.selectCity}</Text>
             <FlatList
               data={CIUDADES_RD}
               keyExtractor={(item) => item}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
-                <TouchableOpacity
+                <PressableScale
                   style={styles.modalItem}
                   onPress={() => { setCiudad(item); setShowCiudadPicker(false); }}
+                  scaleTo={0.98}
                 >
                   <Text style={[styles.modalItemText, ciudad === item && styles.modalItemActive]}>
                     {item}
                   </Text>
-                </TouchableOpacity>
+                </PressableScale>
               )}
               showsVerticalScrollIndicator={false}
             />
-            <TouchableOpacity style={styles.modalClose} onPress={() => setShowCiudadPicker(false)}>
-              <Text style={styles.modalCloseText}>Cancelar</Text>
-            </TouchableOpacity>
+            <PressableScale style={styles.modalClose} onPress={() => setShowCiudadPicker(false)}>
+              <Text style={styles.modalCloseText}>{t.registro.cancel}</Text>
+            </PressableScale>
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  inner: { flex: 1, padding: 24, paddingTop: 60 },
-  scroll: { padding: 24, paddingTop: 50 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: {
+    flexGrow: 1,
+    padding: theme.spacing.xxl,
+    paddingTop: 50,
+    paddingBottom: theme.spacing.huge,
+  },
   backButton: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
-  header: { alignItems: 'center', marginBottom: 24, gap: 8 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 26, color: '#FFFFFF', textAlign: 'center' },
-  subtitle: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 20 },
-  sectionLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#34C26A', marginBottom: 10, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1 },
+  headerTitle: {
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+  },
+  headerSubtitle: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
+  },
+  form: { marginTop: theme.spacing.xl, gap: theme.spacing.md },
+  sectionLabel: {
+    ...theme.text.label,
+    color: theme.colors.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionLabelSpaced: { marginTop: theme.spacing.md },
   inputWrapper: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
-    paddingHorizontal: 14, height: 50, marginBottom: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
   },
-  input: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 15, color: '#FFFFFF' },
-  mapSection: { marginBottom: 10 },
-  mapLabel: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#34C26A', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  mapContainer: { height: 200, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  mapCoords: { fontFamily: 'DMSans-Medium', fontSize: 12, color: '#34C26A', marginTop: 6 },
-  mapHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6 },
-  docHint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
+  },
+  inputFilled: {
+    borderColor: theme.colors.accent,
+  },
+  input: {
+    flex: 1,
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
+  },
+  inputText: {
+    textAlignVertical: 'center',
+    paddingTop: 18,
+  },
+  inputPlaceholder: {
+    color: theme.colors.textMuted,
+  },
+  mapSection: { gap: theme.spacing.sm },
+  mapLabel: {
+    ...theme.text.label,
+    color: theme.colors.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  mapContainer: {
+    height: 200,
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    ...theme.shadow.card,
+  },
+  mapCoords: {
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyMedium,
+    color: theme.colors.accent,
+  },
+  mapHint: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+  },
+  docHint: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
   docButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderStyle: 'dashed',
-    borderRadius: 12, paddingVertical: 14, paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.accentSofter,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+    borderStyle: 'dashed',
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
-  docButtonText: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.5)' },
+  docButtonText: {
+    ...theme.text.bodyMedium,
+    fontFamily: theme.font.bodyBold,
+    fontSize: 14,
+    color: theme.colors.accent,
+  },
   docAttached: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(52, 194, 106,0.15)', borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: 'rgba(52, 194, 106,0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.accentSoft,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
   },
-  docAttachedName: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 13, color: '#34C26A' },
-  errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FF6B6B', textAlign: 'center', marginVertical: 8 },
-  primaryButton: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
-  primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#106B4F' },
-  buttonDisabled: { opacity: 0.7 },
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, paddingHorizontal: 32 },
-  centerTitle: { fontFamily: 'Poppins-Bold', fontSize: 22, color: '#FFFFFF', textAlign: 'center' },
-  centerText: { fontFamily: 'DMSans-Regular', fontSize: 15, color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 22 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '60%' },
-  modalTitle: { fontFamily: 'Poppins-SemiBold', fontSize: 18, color: '#052419', marginBottom: 16 },
-  modalItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  modalItemText: { fontFamily: 'DMSans-Regular', fontSize: 16, color: '#333' },
-  modalItemActive: { color: '#106B4F', fontFamily: 'DMSans-Bold' },
-  modalClose: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  modalCloseText: { fontFamily: 'DMSans-Medium', fontSize: 15, color: '#666' },
+  docAttachedName: {
+    flex: 1,
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.accent,
+  },
+  errorBox: {
+    backgroundColor: theme.colors.dangerSoft,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.sm,
+  },
+  errorText: {
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.danger,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: theme.spacing.sm,
+    ...theme.shadow.accent,
+  },
+  buttonDisabled: {
+    backgroundColor: theme.colors.bgSecondary,
+    ...theme.shadow.none,
+  },
+  primaryButtonText: {
+    fontFamily: theme.font.bold,
+    fontSize: 16,
+    color: theme.colors.white,
+    letterSpacing: 0.3,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xxxl,
+  },
+  centerIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    ...theme.shadow.accent,
+  },
+  centerIconWarning: {
+    backgroundColor: theme.colors.warning,
+  },
+  successEmoji: { fontSize: 64, textAlign: 'center' },
+  centerTitle: {
+    ...theme.text.h1,
+    fontSize: 24,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  centerText: {
+    ...theme.text.body,
+    fontSize: 15,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  centerButtonWrap: {
+    alignSelf: 'stretch',
+    marginTop: theme.spacing.md,
+  },
+  obsBox: {
+    backgroundColor: theme.colors.warningSoft,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    alignSelf: 'stretch',
+  },
+  obsLabel: {
+    ...theme.text.label,
+    color: theme.colors.warning,
+    marginBottom: theme.spacing.xs,
+  },
+  obsText: {
+    ...theme.text.body,
+    color: theme.colors.textPrimary,
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: theme.spacing.xl,
+    maxHeight: '60%',
+    overflow: 'hidden',
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    marginBottom: theme.spacing.md,
+  },
+  modalTitle: {
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.lg,
+  },
+  modalItem: {
+    paddingVertical: theme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  modalItemText: {
+    ...theme.text.body,
+    fontSize: 16,
+    color: theme.colors.textPrimary,
+  },
+  modalItemActive: {
+    color: theme.colors.accent,
+    fontFamily: theme.font.bodyBold,
+  },
+  modalClose: {
+    paddingVertical: theme.spacing.lg,
+    alignItems: 'center',
+    marginTop: theme.spacing.sm,
+  },
+  modalCloseText: {
+    ...theme.text.bodyMedium,
+    fontSize: 15,
+    color: theme.colors.textSecondary,
+  },
 });

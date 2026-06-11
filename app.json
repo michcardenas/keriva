@@ -2,6 +2,7 @@
   "expo": {
     "name": "Keriva - Encuentra tu Farmacia",
     "slug": "keriva-farmacias",
+    "owner": "michcardenas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -45,7 +46,10 @@
         "googleMaps": {
           "apiKey": "AIzaSyCLBy9-U16R-yYLF4XojNaO5GbM95Us33M"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "splash": {
       "image": "./assets/images/splash-icon.png",

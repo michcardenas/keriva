@@ -4,7 +4,6 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   BackHandler,
@@ -20,6 +19,8 @@ import {
   DISCLAIMER_VERSIONS,
   type TipoDisclaimer,
 } from '@/lib/api/disclaimer';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
 
 // =====================================================================
 // DisclaimerModal — Brief §5.1 (Keriva Kids / Care)
@@ -141,7 +142,7 @@ export default function DisclaimerModal({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIcon}>
-              <AlertTriangle size={24} color="#FFB74D" />
+              <AlertTriangle size={24} color={theme.colors.warning} />
             </View>
             <Text style={styles.headerTitle}>AVISO MÉDICO IMPORTANTE</Text>
             <Text style={styles.headerSub}>
@@ -182,15 +183,15 @@ export default function DisclaimerModal({
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <View style={styles.footerButtons}>
-              <TouchableOpacity
+              <PressableScale
                 style={styles.cancelButton}
                 onPress={onCancel}
                 disabled={submitting}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
+              </PressableScale>
 
-              <TouchableOpacity
+              <PressableScale
                 style={[
                   styles.acceptButton,
                   (!reachedBottom || submitting) && styles.acceptButtonDisabled,
@@ -199,16 +200,16 @@ export default function DisclaimerModal({
                 disabled={!reachedBottom || submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={theme.colors.white} />
                 ) : (
                   <>
-                    <Check size={16} color="#FFFFFF" />
+                    <Check size={16} color={theme.colors.white} />
                     <Text style={styles.acceptButtonText}>
                       Acepto y entiendo
                     </Text>
                   </>
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
 
             <Text style={styles.versionText}>

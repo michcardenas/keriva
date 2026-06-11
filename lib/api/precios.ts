@@ -521,6 +521,8 @@ export async function getAffiliatedPharmacies(limit = 5): Promise<
     nombre: string;
     direccion: string;
     descuento: number | null;
+    latitud: number | null;
+    longitud: number | null;
   }>
 > {
   const { data, error } = await supabase
@@ -530,22 +532,31 @@ export async function getAffiliatedPharmacies(limit = 5): Promise<
 
   if (error || !data) return [];
 
-  // Completar dirección desde "Farmacias"
+  // Completar dirección + coordenadas desde "Farmacias"
   const ids = data.map((d) => d.farmacia_id);
   const { data: detalles } = await supabase
     .from('Farmacias')
-    .select('id, direccion')
+    .select('id, direccion, latitud, longitud')
     .in('id', ids);
 
-  const dirMap = new Map<number, string>();
-  (detalles ?? []).forEach((f: { id: number; direccion: string }) => {
-    dirMap.set(f.id, f.direccion);
+  const detMap = new Map<number, { direccion: string; latitud: number | null; longitud: number | null }>();
+  (detalles ?? []).forEach((f: { id: number; direccion: string; latitud: number | null; longitud: number | null }) => {
+    detMap.set(f.id, {
+      direccion: f.direccion,
+      latitud: f.latitud === null ? null : Number(f.latitud),
+      longitud: f.longitud === null ? null : Number(f.longitud),
+    });
   });
 
-  return data.map((d) => ({
-    farmaciaId: d.farmacia_id as number,
-    nombre: (d.farmacia_nombre as string) ?? 'Farmacia',
-    direccion: dirMap.get(d.farmacia_id as number) ?? 'Sin dirección',
-    descuento: d.descuento_estandar === null ? null : Number(d.descuento_estandar),
-  }));
+  return data.map((d) => {
+    const det = detMap.get(d.farmacia_id as number);
+    return {
+      farmaciaId: d.farmacia_id as number,
+      nombre: (d.farmacia_nombre as string) ?? 'Farmacia',
+      direccion: det?.direccion ?? 'Sin dirección',
+      descuento: d.descuento_estandar === null ? null : Number(d.descuento_estandar),
+      latitud: det?.latitud ?? null,
+      longitud: det?.longitud ?? null,
+    };
+  });
 }

@@ -3,12 +3,14 @@ import {
   Animated,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/AuthContext';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
 
 type LoginNudgeProps = {
   message?: string;
@@ -17,12 +19,15 @@ type LoginNudgeProps = {
 };
 
 export default function LoginNudge({
-  message = 'Crea tu cuenta para reportar precios y ganar puntos',
-  ctaText = 'Registrarme',
+  message,
+  ctaText,
   delayMs = 4000,
 }: LoginNudgeProps) {
   const { session } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
+  const resolvedMessage = message ?? t.comp.nudgeMessage;
+  const resolvedCta = ctaText ?? t.comp.nudgeCta;
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -61,20 +66,22 @@ export default function LoginNudge({
       ]}
     >
       <View style={styles.content}>
-        <Text style={styles.message}>{message}</Text>
-        <TouchableOpacity
+        <Text style={styles.message}>{resolvedMessage}</Text>
+        <PressableScale
           style={styles.cta}
           onPress={() => router.push('/auth/register')}
         >
-          <Text style={styles.ctaText}>{ctaText}</Text>
-        </TouchableOpacity>
+          <Text style={styles.ctaText}>{resolvedCta}</Text>
+        </PressableScale>
       </View>
-      <TouchableOpacity
+      <PressableScale
         style={styles.dismiss}
         onPress={() => setDismissed(true)}
+        scaleTo={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
-        <X size={14} color="#999" />
-      </TouchableOpacity>
+        <X size={14} color={theme.colors.textMuted} />
+      </PressableScale>
     </Animated.View>
   );
 }
@@ -83,51 +90,48 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 72,
-    left: 12,
-    right: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
+    left: theme.spacing.md,
+    right: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(52, 194, 106, 0.3)',
+    borderColor: theme.colors.border,
+    ...theme.shadow.lg,
   },
   content: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: theme.spacing.sm,
   },
   message: {
     flex: 1,
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#052419',
+    color: theme.colors.textPrimary,
     lineHeight: 18,
   },
   cta: {
-    backgroundColor: '#106B4F',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    ...theme.shadow.accent,
   },
   ctaText: {
-    fontFamily: 'DMSans-Bold',
+    fontFamily: theme.font.bodyBold,
     fontSize: 12,
-    color: '#FFFFFF',
+    color: theme.colors.accentText,
   },
   dismiss: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: theme.radius.pill,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 4,
+    marginLeft: theme.spacing.xs,
   },
 });

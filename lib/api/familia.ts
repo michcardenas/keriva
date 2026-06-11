@@ -142,7 +142,7 @@ export type CreateDependienteInput = {
 
 /**
  * Crea un dependiente para el usuario autenticado. El backend valida el
- * límite de 5 perfiles activos vía trigger.
+ * límite de 7 perfiles activos vía trigger.
  */
 export async function createDependiente(
   userId: string,
@@ -248,4 +248,6 @@ export const AVATAR_OPTIONS = [
   '🧓', '👴', '👵', '🧔', '🦰', '🦱', '🐶', '🐱',
 ];
 
-export const FAMILIA_LIMIT = 5;
+// 1 titular + 6 dependientes = 7 perfiles activos (Mejora 05, may 2026).
+// Debe coincidir con el trigger check_perfil_limit() en la BD.
+export const FAMILIA_LIMIT = 7;

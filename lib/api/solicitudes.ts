@@ -1,7 +1,12 @@
 import { supabase } from '@/lib/supabase';
 import type { SolicitudFarmaciaRow } from '@/lib/database.types';
 
-export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada';
+export type EstadoSolicitud =
+  | 'pendiente'
+  | 'en_revision'
+  | 'aprobada'
+  | 'rechazada'
+  | 'con_observaciones';
 
 export type SolicitudFarmacia = {
   id: number;
@@ -16,15 +21,20 @@ export type SolicitudFarmacia = {
   nombrePropietario: string;
   cedulaPropietario: string;
   motivoRechazo: string | null;
+  observaciones: string | null;
   documentoUrl: string | null;
+  docLicenciaUrl: string | null;
+  docRegistroUrl: string | null;
+  docCedulaUrl: string | null;
   createdAt: string;
 };
 
 function mapSolicitud(r: SolicitudFarmaciaRow): SolicitudFarmacia {
+  const x = r as any;
   return {
     id: r.id,
     usuarioId: r.usuario_id,
-    estado: r.estado,
+    estado: x.estado,
     nombreComercial: r.nombre_comercial,
     rnc: r.rnc,
     direccion: r.direccion,
@@ -34,7 +44,11 @@ function mapSolicitud(r: SolicitudFarmaciaRow): SolicitudFarmacia {
     nombrePropietario: r.nombre_propietario,
     cedulaPropietario: r.cedula_propietario,
     motivoRechazo: r.motivo_rechazo,
-    documentoUrl: (r as any).documento_url ?? null,
+    observaciones: x.observaciones ?? null,
+    documentoUrl: x.documento_url ?? null,
+    docLicenciaUrl: x.doc_licencia_url ?? null,
+    docRegistroUrl: x.doc_registro_url ?? null,
+    docCedulaUrl: x.doc_cedula_url ?? null,
     createdAt: r.created_at,
   };
 }
@@ -52,6 +66,9 @@ export type CreateSolicitudInput = {
   nombrePropietario: string;
   cedulaPropietario: string;
   documentoUri?: string | null;
+  docLicenciaUri?: string | null;
+  docRegistroUri?: string | null;
+  docCedulaUri?: string | null;
   latitud?: number;
   longitud?: number;
 };
@@ -77,10 +94,10 @@ async function uploadDocumento(userId: string, uri: string): Promise<string | nu
 export async function createSolicitud(
   input: CreateSolicitudInput,
 ): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
-  let documentoUrl: string | null = null;
-  if (input.documentoUri) {
-    documentoUrl = await uploadDocumento(input.usuarioId, input.documentoUri);
-  }
+  const documentoUrl = input.documentoUri ? await uploadDocumento(input.usuarioId, input.documentoUri) : null;
+  const docLicencia = input.docLicenciaUri ? await uploadDocumento(input.usuarioId, input.docLicenciaUri) : null;
+  const docRegistro = input.docRegistroUri ? await uploadDocumento(input.usuarioId, input.docRegistroUri) : null;
+  const docCedula = input.docCedulaUri ? await uploadDocumento(input.usuarioId, input.docCedulaUri) : null;
 
   const { data, error } = await supabase
     .from('solicitudes_farmacia')
@@ -95,6 +112,9 @@ export async function createSolicitud(
       nombre_propietario: input.nombrePropietario,
       cedula_propietario: input.cedulaPropietario,
       documento_url: documentoUrl,
+      doc_licencia_url: docLicencia,
+      doc_registro_url: docRegistro,
+      doc_cedula_url: docCedula,
       latitud: input.latitud ?? 0,
       longitud: input.longitud ?? 0,
     })
@@ -159,6 +179,62 @@ export async function rechazarSolicitud(
     p_motivo: motivo ?? null,
   });
 
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Admin: marcar una solicitud como "en revisión". */
+export async function marcarEnRevision(
+  solicitudId: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.rpc('marcar_solicitud_en_revision', {
+    p_solicitud_id: solicitudId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Admin: pedir correcciones (deja la solicitud "con observaciones"). */
+export async function solicitarObservaciones(
+  solicitudId: number,
+  observaciones: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.rpc('solicitar_observaciones_solicitud', {
+    p_solicitud_id: solicitudId,
+    p_observaciones: observaciones,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+// ── Documentos RD (licencia, registro, cédula) + reenvío ──────
+
+export type DocsReenvio = {
+  licenciaUri?: string | null;
+  registroUri?: string | null;
+  cedulaUri?: string | null;
+};
+
+/**
+ * Farmacia: reenvía la solicitud corregida. Sube los documentos nuevos (si los
+ * hay) y vuelve la solicitud a "pendiente" vía RPC. Los documentos no provistos
+ * conservan su valor anterior.
+ */
+export async function reenviarSolicitud(
+  usuarioId: string,
+  solicitudId: number,
+  docs: DocsReenvio,
+): Promise<{ ok: boolean; error?: string }> {
+  const licencia = docs.licenciaUri ? await uploadDocumento(usuarioId, docs.licenciaUri) : null;
+  const registro = docs.registroUri ? await uploadDocumento(usuarioId, docs.registroUri) : null;
+  const cedula = docs.cedulaUri ? await uploadDocumento(usuarioId, docs.cedulaUri) : null;
+
+  const { error } = await supabase.rpc('reenviar_solicitud_farmacia', {
+    p_solicitud_id: solicitudId,
+    p_doc_licencia: licencia,
+    p_doc_registro: registro,
+    p_doc_cedula: cedula,
+  });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }

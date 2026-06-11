@@ -69,11 +69,59 @@ function buildHeaders(accessToken: string | null, extra?: Record<string, string>
   };
 }
 
-export async function restGet<T = any>(path: string): Promise<T> {
+/**
+ * Refresca la sesión vía supabase-js y devuelve el nuevo access_token.
+ * El JWT dura 1 hora; si expiró, PostgREST responde 401. Antes, la capa REST
+ * leía el token de localStorage sin refrescarlo, así que la sesión web "moría"
+ * tras 1 h. Ahora, ante un 401, refrescamos y reintentamos una vez.
+ *
+ * Tiene un timeout de seguridad: si el refresh se cuelga (lock de supabase-js),
+ * resolvemos null en vez de bloquear la petición indefinidamente.
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+    const refresh = supabase.auth
+      .refreshSession()
+      .then(({ data }) => data.session?.access_token ?? null)
+      .catch(() => null);
+    return await Promise.race([refresh, timeout]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * fetch contra PostgREST con autenticación y reintento automático ante 401.
+ */
+async function authedFetch(
+  path: string,
+  opts: { method?: string; body?: unknown; extraHeaders?: Record<string, string> } = {},
+): Promise<Response> {
+  const { method = 'GET', body, extraHeaders } = opts;
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  const run = (token: string | null) =>
+    fetch(url, {
+      method,
+      headers: buildHeaders(token, extraHeaders),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
   const token = await getAccessTokenAsync();
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: buildHeaders(token),
-  });
+  let res = await run(token);
+
+  // Token expirado → refrescar y reintentar UNA vez (solo si había sesión).
+  if (res.status === 401 && token) {
+    const fresh = (await refreshAccessToken()) ?? (await getAccessTokenAsync());
+    if (fresh && fresh !== token) {
+      res = await run(fresh);
+    }
+  }
+  return res;
+}
+
+export async function restGet<T = any>(path: string): Promise<T> {
+  const r = await authedFetch(path);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`REST GET ${path} → ${r.status}: ${text || 'no body'}`);
@@ -82,14 +130,10 @@ export async function restGet<T = any>(path: string): Promise<T> {
 }
 
 export async function restPost<T = any>(path: string, body: unknown): Promise<T> {
-  const token = await getAccessTokenAsync();
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const r = await authedFetch(path, {
     method: 'POST',
-    headers: buildHeaders(token, {
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-    }),
-    body: JSON.stringify(body),
+    body,
+    extraHeaders: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) {
@@ -100,14 +144,10 @@ export async function restPost<T = any>(path: string, body: unknown): Promise<T>
 }
 
 export async function restPatch<T = any>(path: string, body: unknown): Promise<T> {
-  const token = await getAccessTokenAsync();
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const r = await authedFetch(path, {
     method: 'PATCH',
-    headers: buildHeaders(token, {
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-    }),
-    body: JSON.stringify(body),
+    body,
+    extraHeaders: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) {
@@ -118,11 +158,10 @@ export async function restPatch<T = any>(path: string, body: unknown): Promise<T
 }
 
 export async function restRpc<T = any>(fn: string, body: Record<string, unknown>): Promise<T> {
-  const token = await getAccessTokenAsync();
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+  const r = await authedFetch(`rpc/${fn}`, {
     method: 'POST',
-    headers: buildHeaders(token, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
+    body,
+    extraHeaders: { 'Content-Type': 'application/json' },
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) {

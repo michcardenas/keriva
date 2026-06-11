@@ -4,17 +4,14 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Save, Calendar, Scale, Baby, User as UserIcon, Lock } from 'lucide-react-native';
+import { ArrowLeft, Save, Scale, Baby, User as UserIcon, Lock } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
+import DateField from '@/components/DateField';
+import { useLanguage } from '@/lib/LanguageContext';
 import {
   createDependiente,
   getPerfilFamilia,
@@ -23,18 +20,23 @@ import {
   type TipoPerfil,
   type KerivaPerfil,
 } from '@/lib/api/familia';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 type Mode = 'create' | 'edit';
+type FocusField = 'nombre' | 'apellido' | 'peso' | null;
 
-function isValidDate(s: string): boolean {
-  // YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const d = new Date(s);
-  return !isNaN(d.getTime()) && d.toISOString().startsWith(s);
-}
+// Rango permitido para fecha de nacimiento: desde 1900 (soporta adultos
+// mayores) hasta hoy. Se calcula una sola vez al cargar el módulo.
+const MIN_BIRTH_DATE = new Date(1900, 0, 1);
+const MAX_BIRTH_DATE = new Date();
 
 export default function EditFamiliaScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { user, session } = useAuth();
   const params = useLocalSearchParams<{ id?: string }>();
   const perfilId = typeof params.id === 'string' ? params.id : undefined;
@@ -44,6 +46,7 @@ export default function EditFamiliaScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<KerivaPerfil | null>(null);
+  const [focused, setFocused] = useState<FocusField>(null);
 
   // Form state
   const [tipoPerfil, setTipoPerfil] = useState<TipoPerfil>('dependiente_pediatrico');
@@ -63,7 +66,7 @@ export default function EditFamiliaScreen() {
       const p = await getPerfilFamilia(perfilId);
       if (cancelled) return;
       if (!p) {
-        setError('Perfil no encontrado');
+        setError(t.familia.profileNotFound);
         setLoading(false);
         return;
       }
@@ -89,21 +92,20 @@ export default function EditFamiliaScreen() {
   }, [avatarEmoji]);
 
   const validate = useCallback((): string | null => {
-    if (!nombre.trim()) return 'El nombre es obligatorio';
-    if (fechaNacimiento && !isValidDate(fechaNacimiento)) {
-      return 'Fecha inválida. Usa el formato AAAA-MM-DD';
-    }
+    if (!nombre.trim()) return t.familia.nameRequired;
+    // El formato de fecha ya está garantizado por el selector (DateField),
+    // así que solo validamos presencia cuando es obligatoria (pediátrico).
     if (pesoLb) {
       const n = Number(pesoLb);
       if (!Number.isFinite(n) || n <= 0 || n > 1000) {
-        return 'El peso (lb) no es válido';
+        return t.familia.weightInvalid;
       }
     }
     if (tipoPerfil === 'dependiente_pediatrico' && !fechaNacimiento) {
-      return 'La fecha de nacimiento es obligatoria para perfiles pediátricos';
+      return t.familia.birthDateRequired;
     }
     return null;
-  }, [nombre, fechaNacimiento, pesoLb, tipoPerfil]);
+  }, [nombre, fechaNacimiento, pesoLb, tipoPerfil, t]);
 
   const onSubmit = useCallback(async () => {
     setError(null);
@@ -113,7 +115,7 @@ export default function EditFamiliaScreen() {
       return;
     }
     if (!user) {
-      setError('Sesión no encontrada');
+      setError(t.familia.sessionNotFound);
       return;
     }
     setSubmitting(true);
@@ -130,7 +132,7 @@ export default function EditFamiliaScreen() {
           avatarEmoji,
         });
         if (!res.ok) {
-          setError(res.error ?? 'No se pudo crear el perfil');
+          setError(res.error ?? t.familia.createError);
           return;
         }
       } else if (perfilId) {
@@ -142,7 +144,7 @@ export default function EditFamiliaScreen() {
           avatarEmoji,
         });
         if (!res.ok) {
-          setError(res.error ?? 'No se pudo guardar');
+          setError(res.error ?? t.familia.saveError);
           return;
         }
       }
@@ -155,232 +157,317 @@ export default function EditFamiliaScreen() {
   const tipoOptions = useMemo(
     () =>
       isTitular
-        ? ([{ key: 'titular' as const, label: 'Titular', icon: UserIcon }])
+        ? ([{ key: 'titular' as const, label: t.familia.typeTitular, icon: UserIcon }])
         : ([
-            { key: 'dependiente_pediatrico' as const, label: 'Pediátrico', icon: Baby },
-            { key: 'dependiente_adulto' as const, label: 'Adulto', icon: UserIcon },
+            { key: 'dependiente_pediatrico' as const, label: t.familia.typePediatrico, icon: Baby },
+            { key: 'dependiente_adulto' as const, label: t.familia.typeAdulto, icon: UserIcon },
           ]),
-    [isTitular],
+    [isTitular, t],
   );
 
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Lock size={48} color="#34C26A" />}
-        title="Inicia sesión"
-        description="Necesitas iniciar sesión para gestionar tu familia."
+        icon={<Lock size={48} color={theme.colors.accent} />}
+        title={t.familia.authTitleShort}
+        description={t.familia.authDescEdit}
       />
     );
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+          <ArrowLeft size={22} color={theme.colors.textPrimary} />
+        </PressableScale>
 
+        <Reveal variant="up" delay={60}>
           <View style={styles.header}>
             <Text style={styles.title}>
               {mode === 'edit'
                 ? isTitular
-                  ? 'Mi perfil'
-                  : 'Editar perfil'
-                : 'Nuevo dependiente'}
+                  ? t.familia.myProfile
+                  : t.familia.editProfile
+                : t.familia.newDependent}
             </Text>
             <Text style={styles.subtitle}>
-              {isTitular
-                ? 'Datos del titular de la cuenta.'
-                : 'Información del dependiente (hijo, adulto mayor) para que Keriva personalice recordatorios y cálculos.'}
+              {isTitular ? t.familia.subtitleTitular : t.familia.subtitleDependent}
             </Text>
           </View>
+        </Reveal>
 
-          {loading ? (
-            <ActivityIndicator color="#34C26A" style={{ marginTop: 40 }} />
-          ) : (
-            <>
-              {/* Tipo de perfil */}
-              {!isTitular && (
-                <>
-                  <Text style={styles.sectionLabel}>Tipo de perfil</Text>
-                  <View style={styles.tipoRow}>
-                    {tipoOptions.map(({ key, label, icon: Icon }) => (
-                      <TouchableOpacity
+        {loading ? (
+          <ActivityIndicator color={theme.colors.accent} style={{ marginTop: theme.spacing.huge }} />
+        ) : (
+          <View style={styles.form}>
+            {/* Tipo de perfil */}
+            {!isTitular && (
+              <Reveal index={0} delay={120}>
+                <Text style={styles.sectionLabel}>{t.familia.profileType}</Text>
+                <View style={styles.tipoRow}>
+                  {tipoOptions.map(({ key, label, icon: Icon }) => {
+                    const active = tipoPerfil === key;
+                    return (
+                      <PressableScale
                         key={key}
-                        style={[styles.tipoCard, tipoPerfil === key && styles.tipoCardActive]}
+                        style={[styles.tipoCard, active && styles.tipoCardActive]}
+                        scaleTo={0.96}
                         onPress={() => onPickTipo(key)}
                       >
-                        <Icon size={18} color={tipoPerfil === key ? '#106B4F' : '#FFFFFF'} />
+                        <Icon size={18} color={active ? theme.colors.white : theme.colors.accent} />
                         <Text
                           style={[
                             styles.tipoCardText,
-                            tipoPerfil === key && styles.tipoCardTextActive,
+                            active && styles.tipoCardTextActive,
                           ]}
                         >
                           {label}
                         </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
+                      </PressableScale>
+                    );
+                  })}
+                </View>
+              </Reveal>
+            )}
 
-              {/* Avatar */}
-              <Text style={styles.sectionLabel}>Avatar</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.emojiRow}
-                contentContainerStyle={{ gap: 8, paddingRight: 8 }}
-              >
+            {/* Avatar */}
+            <Reveal index={1} delay={140}>
+              <Text style={styles.sectionLabel}>{t.familia.avatar}</Text>
+              <View style={styles.emojiRow}>
                 {AVATAR_OPTIONS.map((e) => (
-                  <TouchableOpacity
+                  <PressableScale
                     key={e}
                     style={[styles.emojiBtn, avatarEmoji === e && styles.emojiBtnActive]}
+                    scaleTo={0.88}
                     onPress={() => setAvatarEmoji(e)}
                   >
                     <Text style={styles.emojiText}>{e}</Text>
-                  </TouchableOpacity>
+                  </PressableScale>
                 ))}
-              </ScrollView>
+              </View>
+            </Reveal>
 
-              {/* Nombre */}
-              <Text style={styles.sectionLabel}>Nombre *</Text>
-              <View style={styles.inputWrapper}>
+            {/* Nombre */}
+            <Reveal index={2} delay={160}>
+              <Text style={styles.sectionLabel}>{t.familia.name} *</Text>
+              <View style={[styles.inputWrapper, focused === 'nombre' && styles.inputFocused]}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Nombre"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  placeholder={t.familia.namePlaceholder}
+                  placeholderTextColor={theme.colors.textMuted}
                   value={nombre}
                   onChangeText={setNombre}
                   maxLength={60}
+                  onFocus={() => setFocused('nombre')}
+                  onBlur={() => setFocused(null)}
                 />
               </View>
+            </Reveal>
 
-              <Text style={styles.sectionLabel}>Apellido</Text>
-              <View style={styles.inputWrapper}>
+            <Reveal index={3} delay={180}>
+              <Text style={styles.sectionLabel}>{t.familia.lastName}</Text>
+              <View style={[styles.inputWrapper, focused === 'apellido' && styles.inputFocused]}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Apellido (opcional)"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  placeholder={t.familia.lastNamePlaceholder}
+                  placeholderTextColor={theme.colors.textMuted}
                   value={apellido}
                   onChangeText={setApellido}
                   maxLength={60}
+                  onFocus={() => setFocused('apellido')}
+                  onBlur={() => setFocused(null)}
                 />
               </View>
+            </Reveal>
 
+            <Reveal index={4} delay={200}>
               <Text style={styles.sectionLabel}>
-                Fecha de nacimiento {tipoPerfil === 'dependiente_pediatrico' ? '*' : ''}
+                {t.familia.birthDate} {tipoPerfil === 'dependiente_pediatrico' ? '*' : ''}
               </Text>
-              <View style={styles.inputWrapper}>
-                <Calendar size={16} color="rgba(255,255,255,0.5)" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="AAAA-MM-DD"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  value={fechaNacimiento}
-                  onChangeText={setFechaNacimiento}
-                  maxLength={10}
-                  keyboardType="numbers-and-punctuation"
-                  autoCapitalize="none"
-                />
-              </View>
+              <DateField
+                value={fechaNacimiento || null}
+                onChange={(iso) => setFechaNacimiento(iso ?? '')}
+                minimumDate={MIN_BIRTH_DATE}
+                maximumDate={MAX_BIRTH_DATE}
+                placeholder={t.familia.pickDate}
+              />
+            </Reveal>
 
-              <Text style={styles.sectionLabel}>Peso (libras)</Text>
-              <Text style={styles.hint}>
-                Necesario para cálculos pediátricos (Keriva Kids).
-              </Text>
-              <View style={styles.inputWrapper}>
-                <Scale size={16} color="rgba(255,255,255,0.5)" />
+            <Reveal index={5} delay={220}>
+              <Text style={styles.sectionLabel}>{t.familia.weightLb}</Text>
+              <Text style={styles.hint}>{t.familia.weightHint}</Text>
+              <View style={[styles.inputWrapper, focused === 'peso' && styles.inputFocused]}>
+                <Scale size={18} color={focused === 'peso' ? theme.colors.accent : theme.colors.textMuted} />
                 <TextInput
                   style={styles.input}
-                  placeholder="Ej. 44"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  placeholder={t.familia.weightPlaceholder}
+                  placeholderTextColor={theme.colors.textMuted}
                   value={pesoLb}
                   onChangeText={setPesoLb}
                   keyboardType="decimal-pad"
                   maxLength={6}
+                  onFocus={() => setFocused('peso')}
+                  onBlur={() => setFocused(null)}
                 />
                 <Text style={styles.suffix}>lb</Text>
               </View>
+            </Reveal>
 
-              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error ? (
+              <Reveal variant="fade">
+                <Text style={styles.errorText}>{error}</Text>
+              </Reveal>
+            ) : null}
 
-              <TouchableOpacity
+            <Reveal index={6} delay={240}>
+              <PressableScale
                 style={[styles.primaryButton, submitting && styles.buttonDisabled]}
                 onPress={onSubmit}
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#106B4F" />
+                  <ActivityIndicator color={theme.colors.white} />
                 ) : (
                   <>
-                    <Save size={18} color="#106B4F" />
+                    <Save size={18} color={theme.colors.white} />
                     <Text style={styles.primaryButtonText}>
-                      {mode === 'edit' ? 'Guardar cambios' : 'Crear dependiente'}
+                      {mode === 'edit' ? t.familia.saveChanges : t.familia.createDependent}
                     </Text>
                   </>
                 )}
-              </TouchableOpacity>
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+              </PressableScale>
+            </Reveal>
+          </View>
+        )}
+      </KeyboardAwareScreen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 50, paddingBottom: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: {
+    padding: theme.spacing.xxl,
+    paddingTop: 50,
+    paddingBottom: theme.spacing.huge,
+  },
   backButton: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
-  header: { alignItems: 'center', marginBottom: 20, gap: 6 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 26, color: '#FFFFFF', textAlign: 'center' },
-  subtitle: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 20 },
-  sectionLabel: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#34C26A', marginTop: 14, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  hint: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 6, marginTop: -4 },
+  header: { alignItems: 'center', marginBottom: theme.spacing.xl, gap: 6 },
+  title: { ...theme.text.h1, color: theme.colors.textPrimary, textAlign: 'center' },
+  subtitle: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  form: { gap: theme.spacing.xs },
+  sectionLabel: {
+    ...theme.text.label,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    textTransform: 'uppercase',
+  },
+  hint: {
+    ...theme.text.caption,
+    color: theme.colors.textMuted,
+    marginBottom: 6,
+    marginTop: -2,
+  },
   inputWrapper: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
-    paddingHorizontal: 14, height: 50,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
   },
-  input: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 15, color: '#FFFFFF' },
-  suffix: { fontFamily: 'DMSans-Bold', fontSize: 13, color: 'rgba(255,255,255,0.6)' },
-  tipoRow: { flexDirection: 'row', gap: 10 },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+  },
+  input: {
+    flex: 1,
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
+  },
+  suffix: { fontFamily: theme.font.bodyBold, fontSize: 13, color: theme.colors.textSecondary },
+  tipoRow: { flexDirection: 'row', gap: theme.spacing.md },
   tipoCard: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.lg,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
   },
-  tipoCardActive: { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' },
-  tipoCardText: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#FFFFFF' },
-  tipoCardTextActive: { color: '#106B4F' },
-  emojiRow: { marginBottom: 4 },
+  tipoCardActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+    ...theme.shadow.accent,
+  },
+  tipoCardText: { ...theme.text.title, color: theme.colors.textPrimary },
+  tipoCardTextActive: { color: theme.colors.white },
+  emojiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   emojiBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
   },
-  emojiBtnActive: { backgroundColor: 'rgba(52, 194, 106, 0.3)', borderColor: '#34C26A' },
+  emojiBtnActive: {
+    backgroundColor: theme.colors.accentSofter,
+    borderColor: theme.colors.accent,
+  },
   emojiText: { fontSize: 22 },
   primaryButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#FFFFFF', borderRadius: 12,
-    paddingVertical: 16, marginTop: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
+    marginTop: theme.spacing.xxl,
+    ...theme.shadow.accent,
   },
-  primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#106B4F' },
+  primaryButtonText: {
+    fontFamily: theme.font.bold,
+    fontSize: 16,
+    color: theme.colors.white,
+    letterSpacing: 0.3,
+  },
   buttonDisabled: { opacity: 0.7 },
-  errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FF6B6B', textAlign: 'center', marginTop: 12 },
+  errorText: {
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.danger,
+    textAlign: 'center',
+    marginTop: theme.spacing.md,
+  },
 });

@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, FlatList, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Database, BookOpen, Heart, Pill, Thermometer, Brain, Droplets, Eye, Bone, Shield, Zap, Leaf, Syringe, Baby, Wind, Flame } from 'lucide-react-native';
+import { Search, ScanBarcode, MapPin, TrendingUp, CircleAlert as AlertCircle, Database, BookOpen, Heart, Pill, Thermometer, Brain, Droplets, Bone, Shield, Zap, Leaf, Syringe, Baby, Wind, Flame, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -12,12 +12,18 @@ import {
   searchMedications as advancedSearch,
   type SearchResult,
 } from '@/lib/api/search';
+import { getSponsoredPin, categoriaSlug, type SponsoredPin } from '@/lib/api/sponsored';
 import LanguageSelector from '@/components/LanguageSelector';
 import LoginNudge from '@/components/LoginNudge';
 import KerivaLoader from '@/components/KerivaLoader';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import PillBackground from '@/components/ui/PillBackground';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
 
 const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
-  { label: 'Todo', icon: Pill, color: '#106B4F' },
+  { label: 'Todo', icon: Pill, color: theme.colors.accent },
   { label: 'Presión arterial', icon: Heart, color: '#E53935' },
   { label: 'Analgésico', icon: Zap, color: '#FF6F00' },
   { label: 'Antibiótico', icon: Shield, color: '#1565C0' },
@@ -38,6 +44,7 @@ const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todo');
   const [filteredMeds, setFilteredMeds] = useState<MedicationCard[]>([]);
@@ -46,7 +53,9 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [useAdvanced, setUseAdvanced] = useState(false);
+  const [sponsoredPin, setSponsoredPin] = useState<SponsoredPin | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -58,7 +67,7 @@ export default function SearchScreen() {
         if (!cancelled) setPopularMeds(meds);
       } catch {
         if (!cancelled) {
-          setError('Error al cargar medicamentos. Verifica la conexión.');
+          setError(t.home.loadError);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -95,13 +104,27 @@ export default function SearchScreen() {
     };
   }, [searchQuery, selectedCategory]);
 
+  // Pin Patrocinado (adendum §3.1): solo al buscar dentro de una categoría
+  // específica no restringida. La vista ya filtra vigencia + restricted.
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedCategory === 'Todo') {
+      setSponsoredPin(null);
+      return;
+    }
+    (async () => {
+      const pin = await getSponsoredPin(categoriaSlug(selectedCategory));
+      if (!cancelled) setSponsoredPin(pin);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategory]);
+
   async function runSearch(trimmed: string) {
     setSearching(true);
     setError(null);
     try {
-      // Use advanced full-text search (25k DIGEMAPS + 83 curated) when
-      // there's a text query of 2+ chars. Fall back to simple category
-      // filtering for category-only searches.
       if (trimmed.length >= 2) {
         const results = await advancedSearch(trimmed, 30);
         setAdvancedResults(results);
@@ -117,7 +140,7 @@ export default function SearchScreen() {
         setUseAdvanced(false);
       }
     } catch {
-      setError('Error en la búsqueda. Intenta de nuevo.');
+      setError(t.home.searchError);
       setFilteredMeds([]);
       setAdvancedResults([]);
     }
@@ -127,51 +150,81 @@ export default function SearchScreen() {
     setSearchQuery(text);
   };
 
+  // El escaneo de código de barras (GS1 / Digital Shield) es Fase 2 en el brief.
+  const handleScanPress = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(`${t.home.scanSoonTitle}\n\n${t.home.scanSoonMsg}`);
+    } else {
+      Alert.alert(t.home.scanSoonTitle, t.home.scanSoonMsg);
+    }
+  };
+
   const totalResults = useAdvanced ? advancedResults.length : filteredMeds.length;
+  const heroTitle = t.home.heroTitle;
+  const heroSubtitle = t.home.heroSubtitle;
+  // En modo búsqueda (input enfocado o con texto) colapsamos el header para
+  // que los resultados tengan casi toda la pantalla y no los tape el teclado.
+  const compact = focused || searchQuery.trim().length > 0;
 
   return (
     <View style={styles.container}>
+      <PillBackground />
       <LinearGradient
-        colors={['#106B4F', '#052419']}
-        style={styles.header}
+        colors={theme.gradient.header}
+        style={[styles.header, compact && styles.headerCompact]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        end={{ x: 1, y: 1 }}
       >
-        <View style={styles.topBar}>
-          <View style={styles.locationContainer}>
-            <MapPin size={16} color="#34C26A" />
-            <Text style={styles.locationText}>Santiago, RD</Text>
-          </View>
-          <LanguageSelector />
-        </View>
+        {!compact && (
+          <>
+            <View style={styles.topBar}>
+              <View style={styles.locationChip}>
+                <MapPin size={14} color={theme.colors.brandGreenLight} />
+                <Text style={styles.locationText} numberOfLines={1}>{t.home.location}</Text>
+              </View>
+              <LanguageSelector />
+            </View>
 
-        <View style={styles.searchContainer}>
-          <Search size={20} color="rgba(255, 255, 255, 0.5)" style={styles.searchIcon} />
+            <Text style={styles.heroTitle}>{heroTitle}</Text>
+            <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
+          </>
+        )}
+
+        <View style={[styles.searchContainer, focused && styles.searchContainerFocused]}>
+          <Search size={20} color={theme.colors.textMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar medicamento..."
-            placeholderTextColor="rgba(255, 255, 255, 0.5)"
+            placeholder={t.home.searchPlaceholder}
+            placeholderTextColor={theme.colors.textMuted}
             value={searchQuery}
             onChangeText={handleSearchChange}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             autoCorrect={false}
             autoCapitalize="none"
           />
-          <TouchableOpacity style={styles.barcodeButton}>
-            <ScanBarcode size={20} color="#34C26A" />
-          </TouchableOpacity>
+          <PressableScale style={styles.barcodeButton} onPress={handleScanPress} scaleTo={0.9}>
+            <ScanBarcode size={20} color={theme.colors.white} />
+          </PressableScale>
         </View>
       </LinearGradient>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         {error && (
           <View style={styles.errorBanner}>
-            <AlertCircle size={20} color="#D32F2F" />
+            <AlertCircle size={20} color={theme.colors.danger} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
         {loading ? (
-          <KerivaLoader label="Cargando medicamentos…" fullscreen={false} size={80} />
+          <KerivaLoader label={t.home.loading} fullscreen={false} size={80} />
         ) : (
           <>
             <View style={styles.categorySection}>
@@ -185,23 +238,24 @@ export default function SearchScreen() {
                   const isActive = selectedCategory === item.label;
                   const Icon = item.icon;
                   return (
-                    <TouchableOpacity
+                    <PressableScale
                       style={[
                         styles.categoryChip,
                         isActive && { backgroundColor: item.color, borderColor: item.color },
                       ]}
+                      scaleTo={0.94}
                       onPress={() => setSelectedCategory(item.label)}
                     >
-                      <Icon size={16} color={isActive ? '#FFFFFF' : item.color} />
+                      <Icon size={15} color={isActive ? theme.colors.white : item.color} />
                       <Text
                         style={[
                           styles.categoryChipText,
                           isActive && styles.categoryChipTextActive,
                         ]}
                       >
-                        {item.label}
+                        {(t.categories as Record<string, string>)[item.label] ?? item.label}
                       </Text>
-                    </TouchableOpacity>
+                    </PressableScale>
                   );
                 }}
               />
@@ -212,114 +266,144 @@ export default function SearchScreen() {
                 {totalResults > 0 ? (
                   <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                      <Search size={18} color="#106B4F" />
-                      <Text style={styles.sectionTitle}>
-                        {totalResults} resultado{totalResults !== 1 ? 's' : ''}
-                      </Text>
+                      <View style={styles.sectionTitleRow}>
+                        <Search size={18} color={theme.colors.accent} />
+                        <Text style={styles.sectionTitle}>
+                          {totalResults}{' '}
+                          {totalResults !== 1 ? t.home.resultsMany : t.home.resultsOne}
+                        </Text>
+                      </View>
                       {useAdvanced && (
                         <View style={styles.catalogBadge}>
-                          <Database size={12} color="#106B4F" />
-                          <Text style={styles.catalogBadgeText}>
-                            DIGEMAPS + Keriva
-                          </Text>
+                          <Database size={11} color={theme.colors.accent} />
+                          <Text style={styles.catalogBadgeText}>{t.home.catalogBadge}</Text>
                         </View>
                       )}
                     </View>
 
-                    {/* Advanced results (from RPC full-text search) */}
-                    {useAdvanced && advancedResults.map((item, idx) => (
-                      <TouchableOpacity
-                        key={`${item.source}-${item.id ?? idx}`}
-                        style={styles.recentItem}
-                        onPress={item.id ? () => router.push(`/detail?id=${item.id}`) : undefined}
-                        activeOpacity={item.id ? 0.7 : 1}
-                      >
-                        <View style={styles.recentItemLeft}>
-                          <View style={[
-                            styles.pillIcon,
-                            item.source === 'catalogo' && styles.pillIconCatalog,
-                          ]}>
-                            {item.source === 'curado' ? (
+                    {/* Pin Patrocinado — resultado #1 (adendum §3.1) */}
+                    {sponsoredPin && (
+                      <Reveal index={0}>
+                        <PressableScale
+                          style={[styles.resultCard, styles.sponsoredCard]}
+                          onPress={
+                            sponsoredPin.medicamentoId
+                              ? () => router.push(`/detail?id=${sponsoredPin.medicamentoId}`)
+                              : undefined
+                          }
+                        >
+                          <View style={styles.resultLeft}>
+                            <View style={[styles.pillIcon, styles.sponsoredIcon]}>
                               <Text style={styles.pillIconText}>💊</Text>
-                            ) : (
-                              <BookOpen size={18} color="#106B4F" />
-                            )}
-                          </View>
-                          <View style={styles.recentItemInfo}>
-                            <Text style={styles.recentItemName}>
-                              {item.commercialName}
-                              {item.dosage ? ` ${item.dosage}` : ''}
-                            </Text>
-                            {item.activeIngredient && (
-                              <Text style={styles.recentItemIngredient} numberOfLines={1}>
-                                {item.activeIngredient}
+                            </View>
+                            <View style={styles.resultInfo}>
+                              <Text style={styles.resultName} numberOfLines={1}>
+                                {sponsoredPin.nombreComercial}
                               </Text>
-                            )}
-                            <View style={styles.resultMetaRow}>
-                              {item.category ? (
-                                <Text style={styles.recentItemCategory}>{item.category}</Text>
-                              ) : null}
-                              {item.manufacturer ? (
-                                <Text style={styles.recentItemCategory} numberOfLines={1}>
-                                  {item.manufacturer}
+                              <Text style={styles.resultIngredient} numberOfLines={1}>
+                                {sponsoredPin.laboratorioNombre}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.sponsoredBadge}>
+                            <Text style={styles.sponsoredBadgeText}>{t.home.sponsored}</Text>
+                          </View>
+                        </PressableScale>
+                      </Reveal>
+                    )}
+
+                    {/* Advanced results (RPC full-text search) */}
+                    {useAdvanced && advancedResults.map((item, idx) => (
+                      <Reveal key={`${item.source}-${item.id ?? idx}`} index={idx}>
+                        <PressableScale
+                          style={styles.resultCard}
+                          onPress={item.id ? () => router.push(`/detail?id=${item.id}`) : undefined}
+                        >
+                          <View style={styles.resultLeft}>
+                            <View style={[
+                              styles.pillIcon,
+                              item.source === 'catalogo' && styles.pillIconCatalog,
+                            ]}>
+                              {item.source === 'curado' ? (
+                                <Text style={styles.pillIconText}>💊</Text>
+                              ) : (
+                                <BookOpen size={18} color={theme.colors.accent} />
+                              )}
+                            </View>
+                            <View style={styles.resultInfo}>
+                              <Text style={styles.resultName} numberOfLines={1}>
+                                {item.commercialName}
+                                {item.dosage ? ` ${item.dosage}` : ''}
+                              </Text>
+                              {item.activeIngredient && (
+                                <Text style={styles.resultIngredient} numberOfLines={1}>
+                                  {item.activeIngredient}
+                                </Text>
+                              )}
+                              <View style={styles.resultMetaRow}>
+                                {item.category ? (
+                                  <Text style={styles.resultCategory} numberOfLines={1}>{item.category}</Text>
+                                ) : null}
+                                {item.manufacturer ? (
+                                  <Text style={styles.resultCategory} numberOfLines={1}>
+                                    {item.manufacturer}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              {item.referencePrice != null && item.referencePrice > 0 ? (
+                                <Text style={styles.resultPrice}>
+                                  {t.home.referencePrice} RD${item.referencePrice.toFixed(2)}
                                 </Text>
                               ) : null}
                             </View>
-                            {item.referencePrice != null && item.referencePrice > 0 ? (
-                              <Text style={styles.recentItemPrice}>
-                                Ref. RD${item.referencePrice.toFixed(2)}
-                              </Text>
-                            ) : null}
                           </View>
-                        </View>
-                        <View style={styles.sourceTag}>
-                          <Text style={[
-                            styles.sourceTagText,
-                            item.source === 'curado' ? styles.sourceTagCurado : styles.sourceTagCatalog,
-                          ]}>
-                            {item.source === 'curado' ? 'Keriva' : 'DIGEMAPS'}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
+                          <View style={styles.sourceTag}>
+                            <Text style={[
+                              styles.sourceTagText,
+                              item.source === 'curado' ? styles.sourceTagCurado : styles.sourceTagCatalog,
+                            ]}>
+                              {item.source === 'curado' ? t.home.sourceKeriva : t.home.sourceDigemaps}
+                            </Text>
+                          </View>
+                        </PressableScale>
+                      </Reveal>
                     ))}
 
-                    {/* Simple filtered results (category-only search) */}
-                    {!useAdvanced && filteredMeds.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={styles.recentItem}
-                        onPress={() => router.push(`/detail?id=${item.id}`)}
-                      >
-                        <View style={styles.recentItemLeft}>
-                          <View style={styles.pillIcon}>
-                            <Text style={styles.pillIconText}>💊</Text>
+                    {/* Simple filtered results (category-only) */}
+                    {!useAdvanced && filteredMeds.map((item, idx) => (
+                      <Reveal key={item.id} index={idx}>
+                        <PressableScale
+                          style={styles.resultCard}
+                          onPress={() => router.push(`/detail?id=${item.id}`)}
+                        >
+                          <View style={styles.resultLeft}>
+                            <View style={styles.pillIcon}>
+                              <Text style={styles.pillIconText}>💊</Text>
+                            </View>
+                            <View style={styles.resultInfo}>
+                              <Text style={styles.resultName} numberOfLines={1}>
+                                {item.name} {item.dosage}
+                              </Text>
+                              <Text style={styles.resultCategory}>{item.category}</Text>
+                              <Text style={styles.resultPrice}>
+                                {item.minPrice > 0
+                                  ? `${t.home.fromPrice} RD$${item.minPrice.toFixed(2)}`
+                                  : t.home.priceUnavailable}
+                              </Text>
+                            </View>
                           </View>
-                          <View style={styles.recentItemInfo}>
-                            <Text style={styles.recentItemName}>
-                              {item.name} {item.dosage}
-                            </Text>
-                            <Text style={styles.recentItemCategory}>
-                              {item.category}
-                            </Text>
-                            <Text style={styles.recentItemPrice}>
-                              {item.minPrice > 0 ? `Desde RD$${item.minPrice.toFixed(2)}` : 'Precio no disponible'}
-                            </Text>
+                          <View style={styles.chevron}>
+                            <ChevronRight size={18} color={theme.colors.accent} />
                           </View>
-                        </View>
-                        <View style={styles.arrow}>
-                          <Text style={styles.arrowText}>→</Text>
-                        </View>
-                      </TouchableOpacity>
+                        </PressableScale>
+                      </Reveal>
                     ))}
                   </View>
                 ) : (
                   <View style={styles.emptyState}>
                     <Text style={styles.emptyStateEmoji}>🔍</Text>
-                    <Text style={styles.emptyStateTitle}>No se encontraron medicamentos</Text>
-                    <Text style={styles.emptyStateText}>
-                      Intenta con otro término de búsqueda o categoría.{'\n'}
-                      Se busca en 25,785 registros del catálogo DIGEMAPS.
-                    </Text>
+                    <Text style={styles.emptyStateTitle}>{t.home.noResultsTitle}</Text>
+                    <Text style={styles.emptyStateText}>{t.home.noResultsText}</Text>
                   </View>
                 )}
               </>
@@ -328,33 +412,38 @@ export default function SearchScreen() {
             {!searching && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <TrendingUp size={18} color="#106B4F" />
-                  <Text style={styles.sectionTitle}>Medicamentos populares</Text>
+                  <View style={styles.sectionTitleRow}>
+                    <TrendingUp size={18} color={theme.colors.accent} />
+                    <Text style={styles.sectionTitle}>{t.home.popular}</Text>
+                  </View>
                 </View>
 
                 {popularMeds.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Text style={styles.emptyStateEmoji}>💊</Text>
-                    <Text style={styles.emptyStateTitle}>No hay medicamentos disponibles</Text>
-                    <Text style={styles.emptyStateText}>
-                      Los medicamentos aparecerán aquí pronto
-                    </Text>
+                    <Text style={styles.emptyStateTitle}>{t.home.noMedsTitle}</Text>
+                    <Text style={styles.emptyStateText}>{t.home.noMedsText}</Text>
                   </View>
                 ) : (
                   <View style={styles.popularGrid}>
-                    {popularMeds.map((med) => (
-                      <TouchableOpacity
-                        key={med.id}
-                        style={styles.popularCard}
-                        onPress={() => router.push(`/detail?id=${med.id}`)}
-                      >
-                        <Text style={styles.popularCardEmoji}>💊</Text>
-                        <Text style={styles.popularCardName}>{med.name}</Text>
-                        <Text style={styles.popularCardDosage}>{med.dosage}</Text>
-                        <Text style={styles.popularCardPrice}>
-                          {med.minPrice > 0 ? `Desde RD$${med.minPrice.toFixed(2)}` : 'Consultar precio'}
-                        </Text>
-                      </TouchableOpacity>
+                    {popularMeds.map((med, idx) => (
+                      <Reveal key={med.id} index={idx} style={styles.popularCardWrap}>
+                        <PressableScale
+                          style={styles.popularCard}
+                          onPress={() => router.push(`/detail?id=${med.id}`)}
+                        >
+                          <View style={styles.popularIconWrap}>
+                            <Text style={styles.popularCardEmoji}>💊</Text>
+                          </View>
+                          <Text style={styles.popularCardName} numberOfLines={1}>{med.name}</Text>
+                          <Text style={styles.popularCardDosage} numberOfLines={1}>{med.dosage}</Text>
+                          <Text style={styles.popularCardPrice} numberOfLines={1}>
+                            {med.minPrice > 0
+                              ? `${t.home.fromPrice} RD$${med.minPrice.toFixed(2)}`
+                              : t.home.priceConsult}
+                          </Text>
+                        </PressableScale>
+                      </Reveal>
                     ))}
                   </View>
                 )}
@@ -372,298 +461,339 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: theme.colors.bg,
   },
   header: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+    paddingTop: 58,
+    paddingBottom: theme.spacing.xxl,
+    paddingHorizontal: theme.spacing.xl,
+    borderBottomLeftRadius: theme.radius.xl,
+    borderBottomRightRadius: theme.radius.xl,
+    ...theme.shadow.md,
+  },
+  headerCompact: {
+    paddingTop: 46,
+    paddingBottom: theme.spacing.md,
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: theme.spacing.xl,
   },
-  locationContainer: {
+  locationChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    maxWidth: 220,
   },
   locationText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#FFFFFF',
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyMedium,
+    color: theme.colors.white,
+  },
+  heroTitle: {
+    ...theme.text.h1,
+    color: theme.colors.white,
+  },
+  heroSubtitle: {
+    ...theme.text.bodyMedium,
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 4,
+    marginBottom: theme.spacing.lg,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 50,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.radius.lg,
+    paddingLeft: theme.spacing.lg,
+    paddingRight: 6,
+    height: 56,
+    ...theme.shadow.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  searchIcon: {
-    marginRight: 12,
+  searchContainerFocused: {
+    borderColor: theme.colors.brandGreenLight,
   },
   searchInput: {
     flex: 1,
-    fontFamily: 'DMSans-Regular',
-    fontSize: 16,
-    color: '#FFFFFF',
+    minWidth: 0,
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
   },
   barcodeButton: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
   },
-  section: {
-    padding: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
-    color: '#052419',
-  },
-  recentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  recentItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  recentItemInfo: {
-    flex: 1,
-  },
-  pillIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0F9F4',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pillIconText: {
-    fontSize: 20,
-  },
-  recentItemName: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 15,
-    color: '#052419',
-  },
-  recentItemCategory: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666666',
-    marginTop: 2,
-  },
-  recentItemPrice: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#106B4F',
-    marginTop: 2,
-  },
-  arrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F0F9F4',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  arrowText: {
-    fontSize: 16,
-    color: '#106B4F',
+  contentInner: {
+    // Espacio extra abajo para poder desplazar los resultados por encima del
+    // teclado al buscar (que no queden tapados).
+    paddingBottom: 320,
   },
   categorySection: {
-    paddingTop: 16,
-    paddingBottom: 4,
+    paddingTop: theme.spacing.xl,
+    paddingBottom: theme.spacing.xs,
   },
   categoryList: {
-    paddingHorizontal: 20,
-    gap: 8,
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.sm,
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1.5,
-    borderColor: '#E8E8E8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
   },
   categoryChipText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#555555',
+    color: theme.colors.textSecondary,
   },
   categoryChipTextActive: {
-    color: '#FFFFFF',
+    color: theme.colors.white,
   },
-  popularGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 12,
+  section: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.xl,
+    paddingBottom: theme.spacing.sm,
   },
-  popularCard: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  popularCardEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  popularCardName: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#052419',
-    textAlign: 'center',
-  },
-  popularCardDosage: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666666',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  popularCardPrice: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#106B4F',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  loadingContainer: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#106B4F',
-    marginTop: 12,
-  },
-  errorBanner: {
-    backgroundColor: '#FFEBEE',
-    margin: 20,
-    padding: 16,
-    borderRadius: 12,
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.lg,
   },
-  errorText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#D32F2F',
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  sectionTitle: {
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+  },
+  resultCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  sponsoredCard: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.accentSofter,
+  },
+  sponsoredIcon: {
+    backgroundColor: theme.colors.accentSoft,
+  },
+  sponsoredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+    alignSelf: 'flex-start',
+  },
+  sponsoredBadgeText: {
+    fontFamily: theme.font.bold,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: theme.colors.accentText,
+    textTransform: 'uppercase',
+  },
+  resultLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
     flex: 1,
   },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
+  resultInfo: {
+    flex: 1,
+  },
+  pillIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.accentSofter,
     justifyContent: 'center',
-  },
-  emptyStateEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
-    color: '#052419',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
+    alignItems: 'center',
   },
   pillIconCatalog: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: theme.colors.infoSoft,
   },
-  recentItemIngredient: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 11,
-    color: '#106B4F',
+  pillIconText: {
+    fontSize: 22,
+  },
+  resultName: {
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
+  },
+  resultIngredient: {
+    ...theme.text.caption,
+    color: theme.colors.accent,
     marginTop: 1,
+  },
+  resultCategory: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
   },
   resultMetaRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: theme.spacing.sm,
     marginTop: 2,
     flexWrap: 'wrap',
   },
+  resultPrice: {
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
+    marginTop: 4,
+  },
+  chevron: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   sourceTag: {
-    paddingHorizontal: 8,
+    paddingHorizontal: theme.spacing.sm,
     paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: '#F0F0F0',
+    borderRadius: theme.radius.xs,
+    backgroundColor: theme.colors.bgSecondary,
     alignSelf: 'flex-start',
   },
   sourceTagText: {
-    fontFamily: 'DMSans-Bold',
+    ...theme.text.label,
     fontSize: 9,
   },
   sourceTagCurado: {
-    color: '#106B4F',
+    color: theme.colors.accent,
   },
   sourceTagCatalog: {
-    color: '#0D47A1',
+    color: theme.colors.info,
   },
   catalogBadge: {
     flexDirection: 'row',
     gap: 4,
     alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginLeft: 8,
+    backgroundColor: theme.colors.accentSoft,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
   },
   catalogBadgeText: {
-    fontFamily: 'DMSans-Bold',
+    ...theme.text.label,
     fontSize: 9,
-    color: '#106B4F',
+    color: theme.colors.accent,
+  },
+  popularGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+  },
+  popularCardWrap: {
+    width: '47.5%',
+  },
+  popularCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    ...theme.shadow.card,
+  },
+  popularIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSofter,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  popularCardEmoji: {
+    fontSize: 28,
+  },
+  popularCardName: {
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  popularCardDosage: {
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  popularCardPrice: {
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  errorBanner: {
+    backgroundColor: theme.colors.dangerSoft,
+    marginHorizontal: theme.spacing.xl,
+    marginTop: theme.spacing.lg,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  errorText: {
+    ...theme.text.bodyMedium,
+    color: theme.colors.danger,
+    flex: 1,
+  },
+  emptyState: {
+    padding: theme.spacing.huge,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateEmoji: {
+    fontSize: 48,
+    marginBottom: theme.spacing.lg,
+  },
+  emptyStateTitle: {
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  emptyStateText: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
   },
 });

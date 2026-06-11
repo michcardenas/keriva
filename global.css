@@ -7,4 +7,41 @@ html, body, #root {
 #root {
   display: flex;
   flex-direction: column;
+  width: 100%;
+}
+
+/* Quitar el recuadro negro de foco del navegador en inputs/botones.
+   Usamos nuestro propio resaltado (el borde se pone verde al enfocar). */
+input,
+textarea,
+select,
+button,
+[role="button"],
+[tabindex] {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+button:focus {
+  outline: none !important;
+  box-shadow: none;
+}
+
+/* Keriva es una app mobile-first. En pantallas anchas (tablet/desktop web)
+   centramos la app en una columna tipo teléfono para que la versión web se
+   vea intencional en vez de pegada a la esquina. En móvil no cambia nada. */
+@media (min-width: 600px) {
+  body {
+    background-color: #E6EAED;
+  }
+  #root {
+    max-width: 460px;
+    margin: 0 auto;
+    background-color: #F9FAFB;
+    box-shadow: 0 0 60px rgba(17, 24, 39, 0.14);
+  }
 }

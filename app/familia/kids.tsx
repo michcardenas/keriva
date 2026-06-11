@@ -3,13 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   TextInput,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArrowLeft,
@@ -31,6 +27,12 @@ import {
   type ProductoPediatrico,
 } from '@/lib/api/dosis';
 import { hasActiveDisclaimer } from '@/lib/api/disclaimer';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 function ageMonthsFrom(iso: string | null | undefined): number | null {
   if (!iso) return null;
@@ -45,6 +47,7 @@ function ageMonthsFrom(iso: string | null | undefined): number | null {
 
 export default function KidsScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { session } = useAuth();
   const params = useLocalSearchParams<{ perfilId?: string }>();
   const perfilId = typeof params.perfilId === 'string' ? params.perfilId : undefined;
@@ -55,6 +58,7 @@ export default function KidsScreen() {
 
   const [productos, setProductos] = useState<ProductoPediatrico[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [selectedProd, setSelectedProd] = useState<ProductoPediatrico | null>(null);
   const [result, setResult] = useState<CalcularDosisResult | null>(null);
 
@@ -77,11 +81,11 @@ export default function KidsScreen() {
         setPerfil(p);
 
         if (!p) {
-          setError('Perfil no encontrado');
+          setError(t.familia.profileNotFound);
           return;
         }
         if (p.tipoPerfil !== 'dependiente_pediatrico') {
-          setError('Keriva Kids solo aplica a perfiles pediátricos.');
+          setError(t.familia.kidsOnlyPediatric);
           return;
         }
 
@@ -90,7 +94,7 @@ export default function KidsScreen() {
         setDisclaimerOk(has);
         if (!has) setDisclaimerOpen(true);
       } catch (e: any) {
-        setError(e?.message ?? 'No se pudo cargar');
+        setError(e?.message ?? t.familia.loadGenericError);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -146,196 +150,207 @@ export default function KidsScreen() {
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<Lock size={48} color="#34C26A" />}
-        title="Inicia sesión"
-        description="Necesitas iniciar sesión para usar Keriva Kids."
+        icon={<Lock size={48} color={theme.colors.accent} />}
+        title={t.familia.authTitleShort}
+        description={t.familia.kidsAuthDesc}
       />
     );
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <PressableScale style={styles.backButton} onPress={() => router.back()} scaleTo={0.9}>
+          <ArrowLeft size={22} color={theme.colors.textPrimary} />
+        </PressableScale>
 
-        <View style={styles.header}>
-          <View style={styles.heroIcon}>
-            <Baby size={28} color="#FFB74D" />
+        <Reveal variant="up" delay={60}>
+          <View style={styles.header}>
+            <View style={styles.heroIcon}>
+              <Baby size={28} color={theme.colors.warning} />
+            </View>
+            <Text style={styles.title}>{t.familia.kidsTitle}</Text>
+            <Text style={styles.subtitle}>
+              {t.familia.kidsSubtitle}
+              {perfil ? ` · ${perfil.nombre}` : ''}
+            </Text>
           </View>
-          <Text style={styles.title}>Keriva Kids</Text>
-          <Text style={styles.subtitle}>
-            Calculadora de dosis pediátrica basada en peso (libras) y edad.
-            {perfil ? ` · ${perfil.nombre}` : ''}
-          </Text>
-        </View>
+        </Reveal>
 
         {loading ? (
-          <ActivityIndicator color="#34C26A" style={{ marginTop: 40 }} />
+          <ActivityIndicator color={theme.colors.accent} style={{ marginTop: theme.spacing.huge }} />
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
         ) : !disclaimerOk ? (
-          <View style={styles.lockedBox}>
-            <Lock size={28} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.lockedText}>
-              Acepta el aviso médico para acceder a la calculadora.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => setDisclaimerOpen(true)}
-            >
-              <Text style={styles.primaryButtonText}>Leer aviso médico</Text>
-            </TouchableOpacity>
-          </View>
+          <Reveal variant="up" delay={120}>
+            <View style={styles.lockedBox}>
+              <View style={styles.lockedIcon}>
+                <Lock size={28} color={theme.colors.warning} />
+              </View>
+              <Text style={styles.lockedText}>
+                {t.familia.acceptDisclaimerToAccess}
+              </Text>
+              <PressableScale
+                style={styles.primaryButton}
+                onPress={() => setDisclaimerOpen(true)}
+              >
+                <Text style={styles.primaryButtonText}>{t.familia.readDisclaimer}</Text>
+              </PressableScale>
+            </View>
+          </Reveal>
         ) : (
           <>
             {/* Resumen del perfil */}
-            <View style={styles.perfilCard}>
-              <Text style={styles.perfilLabel}>Datos del perfil</Text>
-              <View style={styles.perfilRow}>
-                <View style={styles.perfilMeta}>
-                  <Scale size={14} color="#34C26A" />
-                  <Text style={styles.perfilMetaText}>
-                    {pesoLb != null ? `${pesoLb} lb` : 'Peso no registrado'}
-                  </Text>
+            <Reveal variant="up" delay={120}>
+              <View style={styles.perfilCard}>
+                <Text style={styles.perfilLabel}>{t.familia.profileData}</Text>
+                <View style={styles.perfilRow}>
+                  <View style={styles.perfilMeta}>
+                    <Scale size={14} color={theme.colors.accent} />
+                    <Text style={styles.perfilMetaText}>
+                      {pesoLb != null ? `${pesoLb} lb` : t.familia.noWeight}
+                    </Text>
+                  </View>
+                  <View style={styles.perfilMeta}>
+                    <Baby size={14} color={theme.colors.accent} />
+                    <Text style={styles.perfilMetaText}>
+                      {edadMeses != null
+                        ? edadMeses < 24
+                          ? `${edadMeses} ${t.familia.months}`
+                          : `${Math.floor(edadMeses / 12)} ${t.familia.years}`
+                        : t.familia.noAge}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.perfilMeta}>
-                  <Baby size={14} color="#34C26A" />
-                  <Text style={styles.perfilMetaText}>
-                    {edadMeses != null
-                      ? edadMeses < 24
-                        ? `${edadMeses} meses`
-                        : `${Math.floor(edadMeses / 12)} años`
-                      : 'Edad no registrada'}
-                  </Text>
-                </View>
+                {pesoLb == null ? (
+                  <PressableScale
+                    style={styles.editPesoBtn}
+                    scaleTo={0.96}
+                    onPress={() =>
+                      router.push(`/familia/edit?id=${perfilId}` as any)
+                    }
+                  >
+                    <Text style={styles.editPesoText}>{t.familia.editWeight}</Text>
+                  </PressableScale>
+                ) : null}
               </View>
-              {pesoLb == null ? (
-                <TouchableOpacity
-                  style={styles.editPesoBtn}
-                  onPress={() =>
-                    router.push(`/familia/edit?id=${perfilId}` as any)
-                  }
-                >
-                  <Text style={styles.editPesoText}>
-                    Editar peso del perfil →
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+            </Reveal>
 
             {/* Buscador */}
-            <Text style={styles.sectionLabel}>Medicamento</Text>
-            <View style={styles.inputWrap}>
-              <Search size={16} color="rgba(255,255,255,0.5)" />
-              <TextInput
-                style={styles.input}
-                placeholder="Buscar por nombre o principio activo"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={searchText}
-                onChangeText={setSearchText}
-              />
-            </View>
+            <Reveal variant="up" delay={160}>
+              <Text style={styles.sectionLabel}>{t.familia.medication}</Text>
+              <View style={[styles.inputWrap, searchFocused && styles.inputFocused]}>
+                <Search size={18} color={searchFocused ? theme.colors.accent : theme.colors.textMuted} />
+                <TextInput
+                  style={styles.input}
+                  placeholder={t.familia.searchByNameOrIngredient}
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                />
+              </View>
+            </Reveal>
 
             <View style={styles.productsList}>
               {productos.length === 0 ? (
-                <Text style={styles.hintText}>
-                  No hay productos con dosis registrada todavía.
-                </Text>
+                <Text style={styles.hintText}>{t.familia.noDoseProducts}</Text>
               ) : (
-                productos.map((p) => (
-                  <TouchableOpacity
-                    key={p.skuId}
-                    style={[
-                      styles.productItem,
-                      selectedProd?.skuId === p.skuId && styles.productItemActive,
-                    ]}
-                    onPress={() => setSelectedProd(p)}
-                  >
-                    <View style={styles.productItemIcon}>
-                      <Pill size={16} color="#34C26A" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.productName}>{p.nombreComercial}</Text>
-                      {p.principioActivo ? (
-                        <Text style={styles.productMeta}>{p.principioActivo}</Text>
-                      ) : null}
-                      <Text style={styles.productMetaSmall}>
-                        {p.dosisMgPorKg} mg/kg · cada {p.frecuenciaHoras}h
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
+                productos.map((p, i) => {
+                  const active = selectedProd?.skuId === p.skuId;
+                  return (
+                    <Reveal key={p.skuId} index={i}>
+                      <PressableScale
+                        style={[styles.productItem, active && styles.productItemActive]}
+                        scaleTo={0.97}
+                        onPress={() => setSelectedProd(p)}
+                      >
+                        <View style={styles.productItemIcon}>
+                          <Pill size={16} color={theme.colors.accent} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.productName}>{p.nombreComercial}</Text>
+                          {p.principioActivo ? (
+                            <Text style={styles.productMeta}>{p.principioActivo}</Text>
+                          ) : null}
+                          <Text style={styles.productMetaSmall}>
+                            {p.dosisMgPorKg} mg/kg · {t.familia.every} {p.frecuenciaHoras}h
+                          </Text>
+                        </View>
+                      </PressableScale>
+                    </Reveal>
+                  );
+                })
               )}
             </View>
 
             {/* Resultado del cálculo */}
             {selectedProd && result ? (
-              <View
-                style={[
-                  styles.resultCard,
-                  !result.ok && styles.resultCardError,
-                ]}
-              >
-                {!result.ok ? (
-                  <>
-                    <View style={styles.resultHeaderRow}>
-                      <AlertTriangle size={20} color="#D32F2F" />
-                      <Text style={styles.resultErrorTitle}>
-                        {result.reason === 'contraindicado'
-                          ? 'Contraindicado'
-                          : result.reason === 'fuera_rango_edad'
-                          ? 'Fuera del rango de edad'
-                          : result.reason === 'sin_peso'
-                          ? 'Falta peso'
-                          : 'No disponible'}
-                      </Text>
-                    </View>
-                    <Text style={styles.resultErrorText}>{result.message}</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.resultLabel}>Dosis estimada</Text>
-                    <Text style={styles.resultDosis}>
-                      {result.dosisMg.toFixed(1)} mg
-                    </Text>
-                    <Text style={styles.resultFrecuencia}>
-                      cada {result.frecuenciaHoras} horas
-                    </Text>
-                    <View style={styles.resultMetaRow}>
-                      <Text style={styles.resultMetaText}>
-                        Peso: {result.pesoLb} lb
-                      </Text>
-                      {result.topeAplicado ? (
-                        <Text style={[styles.resultMetaText, { color: '#FFB74D' }]}>
-                          · Se aplicó tope de seguridad
+              <Reveal variant="up">
+                <View
+                  style={[
+                    styles.resultCard,
+                    !result.ok && styles.resultCardError,
+                  ]}
+                >
+                  {!result.ok ? (
+                    <>
+                      <View style={styles.resultHeaderRow}>
+                        <AlertTriangle size={20} color={theme.colors.danger} />
+                        <Text style={styles.resultErrorTitle}>
+                          {result.reason === 'contraindicado'
+                            ? t.familia.contraindicated
+                            : result.reason === 'fuera_rango_edad'
+                            ? t.familia.outOfAgeRange
+                            : result.reason === 'sin_peso'
+                            ? t.familia.missingWeight
+                            : t.familia.notAvailable}
                         </Text>
-                      ) : null}
-                    </View>
-
-                    {result.advertencia ? (
-                      <View style={styles.warningBox}>
-                        <AlertTriangle size={14} color="#E65100" />
-                        <Text style={styles.warningText}>{result.advertencia}</Text>
                       </View>
-                    ) : null}
+                      <Text style={styles.resultErrorText}>{result.message}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.resultLabel}>{t.familia.estimatedDose}</Text>
+                      <Text style={styles.resultDosis}>
+                        {result.dosisMg.toFixed(1)} mg
+                      </Text>
+                      <Text style={styles.resultFrecuencia}>
+                        {t.familia.everyHours.replace('{n}', String(result.frecuenciaHoras))}
+                      </Text>
+                      <View style={styles.resultMetaRow}>
+                        <Text style={styles.resultMetaText}>
+                          {t.familia.weightLabel.replace('{n}', String(result.pesoLb))}
+                        </Text>
+                        {result.topeAplicado ? (
+                          <Text style={[styles.resultMetaText, { color: theme.colors.warning }]}>
+                            {t.familia.safetyCapApplied}
+                          </Text>
+                        ) : null}
+                      </View>
 
-                    {result.notas ? (
-                      <Text style={styles.notesText}>{result.notas}</Text>
-                    ) : null}
+                      {result.advertencia ? (
+                        <View style={styles.warningBox}>
+                          <AlertTriangle size={14} color={theme.colors.warning} />
+                          <Text style={styles.warningText}>{result.advertencia}</Text>
+                        </View>
+                      ) : null}
 
-                    <Text style={styles.disclaimerFooter}>
-                      ⚠ Estimación basada en literatura estándar. Siempre valide con
-                      su pediatra antes de administrar.
-                    </Text>
-                  </>
-                )}
-              </View>
+                      {result.notas ? (
+                        <Text style={styles.notesText}>{result.notas}</Text>
+                      ) : null}
+
+                      <Text style={styles.disclaimerFooter}>{t.familia.kidsFooter}</Text>
+                    </>
+                  )}
+                </View>
+              </Reveal>
             ) : null}
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScreen>
 
       {perfil ? (
         <DisclaimerModal
@@ -347,93 +362,204 @@ export default function KidsScreen() {
           onCancel={onCancelDisclaimer}
         />
       ) : null}
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { padding: 24, paddingTop: 50, paddingBottom: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: {
+    padding: theme.spacing.xxl,
+    paddingTop: 50,
+    paddingBottom: theme.spacing.huge,
+  },
   backButton: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
-  header: { alignItems: 'center', marginBottom: 20, gap: 6 },
+  header: { alignItems: 'center', marginBottom: theme.spacing.xl, gap: 6 },
   heroIcon: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(255, 183, 77, 0.15)',
-    justifyContent: 'center', alignItems: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 6,
+    ...theme.shadow.sm,
   },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 24, color: '#FFFFFF', textAlign: 'center' },
-  subtitle: { fontFamily: 'DMSans-Regular', fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 },
+  title: { ...theme.text.h1, color: theme.colors.textPrimary, textAlign: 'center' },
+  subtitle: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: theme.spacing.sm,
+  },
   perfilCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12,
-    padding: 14, marginBottom: 16, gap: 8,
-    borderWidth: 1, borderColor: 'rgba(52, 194, 106, 0.15)',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+    gap: theme.spacing.sm,
+    ...theme.shadow.card,
   },
-  perfilLabel: { fontFamily: 'DMSans-Bold', fontSize: 11, color: '#34C26A', textTransform: 'uppercase', letterSpacing: 1 },
-  perfilRow: { flexDirection: 'row', gap: 16 },
+  perfilLabel: {
+    ...theme.text.label,
+    color: theme.colors.accent,
+    textTransform: 'uppercase',
+  },
+  perfilRow: { flexDirection: 'row', gap: theme.spacing.lg },
   perfilMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  perfilMetaText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#FFFFFF' },
-  editPesoBtn: { paddingVertical: 4 },
-  editPesoText: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#FFB74D' },
-  sectionLabel: { fontFamily: 'DMSans-Bold', fontSize: 12, color: '#34C26A', marginTop: 6, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  inputWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12,
-    paddingHorizontal: 14, height: 50,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  perfilMetaText: { ...theme.text.bodyMedium, fontSize: 13, color: theme.colors.textPrimary },
+  editPesoBtn: { paddingVertical: theme.spacing.xs },
+  editPesoText: { ...theme.text.label, fontSize: 12, letterSpacing: 0, color: theme.colors.warning },
+  sectionLabel: {
+    ...theme.text.label,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+    textTransform: 'uppercase',
   },
-  input: { flex: 1, fontFamily: 'DMSans-Regular', fontSize: 15, color: '#FFFFFF' },
-  productsList: { marginTop: 10, gap: 8 },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
+  },
+  input: {
+    flex: 1,
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
+  },
+  productsList: { marginTop: theme.spacing.md, gap: theme.spacing.sm },
   productItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 12, borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    ...theme.shadow.sm,
   },
   productItemActive: {
-    backgroundColor: 'rgba(52, 194, 106, 0.18)',
-    borderColor: '#34C26A',
+    backgroundColor: theme.colors.accentSofter,
+    borderColor: theme.colors.accent,
   },
   productItemIcon: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(52, 194, 106, 0.15)',
-    justifyContent: 'center', alignItems: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accentSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  productName: { fontFamily: 'Poppins-SemiBold', fontSize: 14, color: '#FFFFFF' },
-  productMeta: { fontFamily: 'DMSans-Regular', fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  productMetaSmall: { fontFamily: 'DMSans-Regular', fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
-  hintText: { fontFamily: 'DMSans-Regular', fontSize: 13, color: 'rgba(255,255,255,0.6)', textAlign: 'center', paddingVertical: 16 },
+  productName: { ...theme.text.title, color: theme.colors.textPrimary },
+  productMeta: { ...theme.text.caption, color: theme.colors.textSecondary, marginTop: 2 },
+  productMetaSmall: { ...theme.text.caption, fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  hintText: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: theme.spacing.lg,
+  },
   resultCard: {
-    marginTop: 20, padding: 18, borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2, borderColor: '#34C26A',
+    marginTop: theme.spacing.xl,
+    padding: theme.spacing.xl,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
     gap: 6,
+    ...theme.shadow.card,
   },
-  resultCardError: { borderColor: '#D32F2F', backgroundColor: '#FFF5F5' },
-  resultHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  resultErrorTitle: { fontFamily: 'Poppins-Bold', fontSize: 15, color: '#D32F2F' },
-  resultErrorText: { fontFamily: 'DMSans-Regular', fontSize: 13, color: '#7F1D1D', lineHeight: 19 },
-  resultLabel: { fontFamily: 'DMSans-Bold', fontSize: 11, color: '#106B4F', textTransform: 'uppercase', letterSpacing: 1 },
-  resultDosis: { fontFamily: 'Poppins-Black', fontSize: 36, color: '#052419', marginVertical: -2 },
-  resultFrecuencia: { fontFamily: 'DMSans-Bold', fontSize: 14, color: '#106B4F' },
-  resultMetaRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
-  resultMetaText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#6B7280' },
+  resultCardError: { borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerSoft },
+  resultHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  resultErrorTitle: { ...theme.text.h3, fontFamily: theme.font.bold, color: theme.colors.danger },
+  resultErrorText: { ...theme.text.body, color: theme.colors.danger, lineHeight: 19 },
+  resultLabel: {
+    ...theme.text.label,
+    color: theme.colors.accent,
+    textTransform: 'uppercase',
+  },
+  resultDosis: { fontFamily: theme.font.display, fontSize: 36, color: theme.colors.textPrimary, marginVertical: -2 },
+  resultFrecuencia: { ...theme.text.title, color: theme.colors.accent },
+  resultMetaRow: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.xs },
+  resultMetaText: { ...theme.text.caption, color: theme.colors.textSecondary },
   warningBox: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
-    marginTop: 10, padding: 10, borderRadius: 8,
-    backgroundColor: '#FFF3E0',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.warningSoft,
   },
-  warningText: { flex: 1, fontFamily: 'DMSans-Medium', fontSize: 12, color: '#E65100', lineHeight: 17 },
-  notesText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: '#6B7280', marginTop: 8, lineHeight: 17 },
-  disclaimerFooter: { fontFamily: 'DMSans-Bold', fontSize: 11, color: '#9CA3AF', marginTop: 10, textAlign: 'center' },
-  lockedBox: { alignItems: 'center', gap: 14, padding: 24, marginTop: 20 },
-  lockedText: { fontFamily: 'DMSans-Regular', fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
-  primaryButton: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 22 },
-  primaryButtonText: { fontFamily: 'Poppins-Bold', fontSize: 14, color: '#106B4F' },
-  errorText: { fontFamily: 'DMSans-Medium', fontSize: 14, color: '#FF6B6B', textAlign: 'center', marginTop: 16 },
+  warningText: { flex: 1, ...theme.text.bodyMedium, fontSize: 12, color: theme.colors.warning, lineHeight: 17 },
+  notesText: { ...theme.text.caption, color: theme.colors.textSecondary, marginTop: theme.spacing.sm, lineHeight: 17 },
+  disclaimerFooter: {
+    ...theme.text.label,
+    fontSize: 11,
+    letterSpacing: 0,
+    color: theme.colors.textMuted,
+    marginTop: theme.spacing.md,
+    textAlign: 'center',
+  },
+  lockedBox: {
+    alignItems: 'center',
+    gap: theme.spacing.lg,
+    padding: theme.spacing.xxl,
+    marginTop: theme.spacing.xl,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    ...theme.shadow.card,
+  },
+  lockedIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.warningSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lockedText: {
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xxl,
+    ...theme.shadow.accent,
+  },
+  primaryButtonText: { fontFamily: theme.font.bold, fontSize: 15, color: theme.colors.white },
+  errorText: {
+    ...theme.text.bodyMedium,
+    fontSize: 14,
+    color: theme.colors.danger,
+    textAlign: 'center',
+    marginTop: theme.spacing.lg,
+  },
 });

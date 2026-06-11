@@ -1,9 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, MapPin, Navigation, ExternalLink } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, Linking, Platform } from 'react-native';
+import { ArrowLeft, MapPin, Map as MapIcon, Navigation, ShoppingBag, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
+import { getUserLocation } from '@/lib/location';
+import { getSucursalesConProducto, type SucursalDisponible } from '@/lib/api/inventario';
+import { createReserva } from '@/lib/api/reservas';
 import { getMedicationDetail, type MedicationDetailView } from '@/lib/api/medicamentos';
 import {
   findProductoByMedicamentoName,
@@ -11,6 +14,11 @@ import {
 } from '@/lib/api/precios';
 import KerivaLoader from '@/components/KerivaLoader';
 import PriceRangeCard from '@/components/PriceRangeCard';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import PillBackground from '@/components/ui/PillBackground';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -27,10 +35,29 @@ type AffiliatedPharmacy = {
   nombre: string;
   direccion: string;
   descuento: number | null;
+  latitud: number | null;
+  longitud: number | null;
 };
+
+// Distancia Haversine en km entre dos puntos.
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
 
 export default function DetailScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const [medication, setMedication] = useState<MedicationDetailView | null>(null);
@@ -39,6 +66,74 @@ export default function DetailScreen() {
   const [skuId, setSkuId] = useState<string | null>(null);
   const [nombreComercial, setNombreComercial] = useState<string | null>(null);
   const [affiliated, setAffiliated] = useState<AffiliatedPharmacy[]>([]);
+  // Ubicación del usuario para calcular la distancia a cada farmacia (#30).
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  // Sucursales (farmacias aprobadas) que tienen el producto disponible.
+  const { user } = useAuth();
+  const [sucursales, setSucursales] = useState<(SucursalDisponible & { distanceKm: number | null })[]>([]);
+  const [reservando, setReservando] = useState<string | null>(null);
+  const [reservadaEn, setReservadaEn] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUserLocation().then((loc) => {
+      if (!cancelled) setUserLoc({ lat: loc.lat, lng: loc.lng });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Disponibilidad por sucursal: cuando hay producto matcheado, traer las
+  // sucursales que lo tienen y ordenarlas por cercanía.
+  useEffect(() => {
+    let cancelled = false;
+    if (!skuId) {
+      setSucursales([]);
+      return;
+    }
+    getSucursalesConProducto(skuId).then((rows) => {
+      if (cancelled) return;
+      const withDist = rows.map((s) => ({
+        ...s,
+        distanceKm:
+          userLoc && s.latitud != null && s.longitud != null
+            ? distanceKm(userLoc.lat, userLoc.lng, s.latitud, s.longitud)
+            : null,
+      }));
+      withDist.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+      setSucursales(withDist);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [skuId, userLoc]);
+
+  const abrirRuta = useCallback((s: SucursalDisponible) => {
+    if (s.latitud == null || s.longitud == null) return;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${s.latitud},${s.longitud}&travelmode=driving`;
+    if (Platform.OS === 'web') window.open(url, '_blank');
+    else Linking.openURL(url);
+  }, []);
+
+  const reservar = useCallback(
+    async (s: SucursalDisponible) => {
+      if (!user) {
+        router.push('/auth/login');
+        return;
+      }
+      setReservando(s.sucursalId);
+      const res = await createReserva({
+        usuarioId: user.id,
+        sucursalId: s.sucursalId,
+        productoId: skuId as string,
+        precio: s.precio,
+      });
+      setReservando(null);
+      if (res.ok) setReservadaEn(s.sucursalId);
+    },
+    [user, skuId, router],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -76,19 +171,22 @@ export default function DetailScreen() {
   }, [params.id]);
 
   if (loading) {
-    return <KerivaLoader label="Cargando detalle…" />;
+    return <KerivaLoader label={t.detail.loadingDetail} />;
   }
 
   if (!medication) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <Text style={styles.emptyStateTitle}>Medicamento no encontrado</Text>
-        <TouchableOpacity
-          style={styles.backButtonEmpty}
-          onPress={() => router.push('/(tabs)')}
-        >
-          <Text style={styles.backButtonText}>Volver</Text>
-        </TouchableOpacity>
+        <PillBackground />
+        <Reveal variant="up">
+          <Text style={styles.emptyStateTitle}>{t.detail.notFound}</Text>
+          <PressableScale
+            style={styles.backButtonEmpty}
+            onPress={() => router.push('/(tabs)')}
+          >
+            <Text style={styles.backButtonText}>{t.detail.back}</Text>
+          </PressableScale>
+        </Reveal>
       </View>
     );
   }
@@ -97,213 +195,317 @@ export default function DetailScreen() {
   const savings = avgPrice > minPrice ? avgPrice - minPrice : 0;
   const cheapestPharmacy = medication.prices[0] ?? null;
 
+  // Coordenadas para el botón "Ver en el mapa": primero una farmacia afiliada
+  // con coordenadas, si no, la del primer reporte de precio.
+  const affWithCoords = affiliated.find((a) => a.latitud != null && a.longitud != null);
+  const priceWithCoords = medication.prices.find((p) => p.latitude && p.longitude);
+  const mapCoords = affWithCoords
+    ? {
+        lat: affWithCoords.latitud as number,
+        lng: affWithCoords.longitud as number,
+        name: affWithCoords.nombre,
+        addr: affWithCoords.direccion ?? '',
+        price: minPrice,
+      }
+    : priceWithCoords
+    ? {
+        lat: priceWithCoords.latitude as number,
+        lng: priceWithCoords.longitude as number,
+        name: priceWithCoords.pharmacyName,
+        addr: priceWithCoords.pharmacyAddress ?? '',
+        price: priceWithCoords.price,
+      }
+    : null;
+
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#106B4F', '#052419']}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
-          <ArrowLeft size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {medication.name} {medication.dosage}
-        </Text>
-        <Text style={styles.headerSubtitle}>{medication.category}</Text>
-      </LinearGradient>
+      <PillBackground />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Encabezado */}
+        <Reveal variant="up" delay={40}>
+          <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
+            <PressableScale
+              style={styles.backButton}
+              onPress={() => router.push('/(tabs)')}
+              scaleTo={0.9}
+            >
+              <ArrowLeft size={22} color={theme.colors.textPrimary} />
+            </PressableScale>
+            <Text style={styles.headerTitle}>
+              {medication.name} {medication.dosage}
+            </Text>
+            <View style={styles.categoryChip}>
+              <Text style={styles.categoryChipText}>{medication.category}</Text>
+            </View>
+          </View>
+        </Reveal>
+
         {/* Adendum v2.1 §3.3 — Rango estimado + auditoría comunitaria */}
         {skuId && affiliated.length > 0 && (
+          <Reveal index={1} delay={80}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.detail.estimatedAffiliated}</Text>
+              {affiliated.map((f, idx) => {
+                const dist =
+                  userLoc && f.latitud != null && f.longitud != null
+                    ? distanceKm(userLoc.lat, userLoc.lng, f.latitud, f.longitud)
+                    : null;
+                const hasCoords = f.latitud != null && f.longitud != null;
+                return (
+                  <Reveal key={f.farmaciaId} index={idx} delay={120}>
+                    <View style={styles.pharmacyBlock}>
+                      <View style={styles.pharmacyBlockHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.pharmacyBlockName}>{f.nombre}</Text>
+                          <View style={styles.locationRow}>
+                            <MapPin size={12} color={theme.colors.textSecondary} />
+                            <Text style={styles.pharmacyBlockAddr} numberOfLines={1}>
+                              {f.direccion}
+                            </Text>
+                          </View>
+                          {dist !== null && (
+                            <View style={styles.distanceRow}>
+                              <Navigation size={12} color={theme.colors.accent} />
+                              <Text style={styles.distanceText}>{formatDistance(dist)} {t.detail.away}</Text>
+                            </View>
+                          )}
+                        </View>
+                        {f.descuento !== null && f.descuento > 0 && (
+                          <View style={styles.descuentoBadge}>
+                            <Text style={styles.descuentoText}>-{Math.round(f.descuento)}%</Text>
+                          </View>
+                        )}
+                      </View>
+                      <PriceRangeCard
+                        skuId={skuId}
+                        farmaciaId={f.farmaciaId}
+                        medicamentoNombre={nombreComercial ?? medication.name}
+                      />
+                    </View>
+                  </Reveal>
+                );
+              })}
+            </View>
+          </Reveal>
+        )}
+
+        {/* Disponibilidad real por sucursal (farmacias aprobadas) */}
+        {skuId && sucursales.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Precio estimado en farmacias afiliadas</Text>
-            {affiliated.map((f) => (
-              <View key={f.farmaciaId} style={styles.pharmacyBlock}>
-                <View style={styles.pharmacyBlockHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pharmacyBlockName}>{f.nombre}</Text>
-                    <View style={styles.locationRow}>
-                      <MapPin size={12} color="#666" />
-                      <Text style={styles.pharmacyBlockAddr} numberOfLines={1}>
-                        {f.direccion}
-                      </Text>
+            <Text style={styles.sectionTitle}>Disponible cerca de ti</Text>
+            {sucursales.map((s) => {
+              const reservada = reservadaEn === s.sucursalId;
+              return (
+                <View key={s.sucursalId} style={styles.dispCard}>
+                  <View style={styles.dispHead}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dispName} numberOfLines={1}>{s.nombre}</Text>
+                      <View style={styles.locationRow}>
+                        <MapPin size={12} color={theme.colors.textSecondary} />
+                        <Text style={styles.pharmacyBlockAddr} numberOfLines={1}>{s.direccion}</Text>
+                      </View>
+                      {s.distanceKm != null && (
+                        <View style={styles.distanceRow}>
+                          <Navigation size={12} color={theme.colors.accent} />
+                          <Text style={styles.distanceText}>{formatDistance(s.distanceKm)} {t.detail.away}</Text>
+                        </View>
+                      )}
                     </View>
+                    {s.precio != null && <Text style={styles.dispPrice}>RD${s.precio.toFixed(2)}</Text>}
                   </View>
-                  {f.descuento !== null && f.descuento > 0 && (
-                    <View style={styles.descuentoBadge}>
-                      <Text style={styles.descuentoText}>-{Math.round(f.descuento)}%</Text>
-                    </View>
-                  )}
+                  <View style={styles.dispActions}>
+                    <PressableScale style={styles.dispRoute} onPress={() => abrirRuta(s)}>
+                      <Navigation size={15} color={theme.colors.accent} />
+                      <Text style={styles.dispRouteText}>Cómo llegar</Text>
+                    </PressableScale>
+                    {reservada ? (
+                      <View style={styles.dispReservada}>
+                        <Check size={15} color={theme.colors.success} />
+                        <Text style={styles.dispReservadaText}>Reservado</Text>
+                      </View>
+                    ) : (
+                      <PressableScale
+                        style={[styles.dispReservar, reservando === s.sucursalId && { opacity: 0.6 }]}
+                        onPress={() => reservar(s)}
+                      >
+                        <ShoppingBag size={15} color={theme.colors.accentText} />
+                        <Text style={styles.dispReservarText}>{reservando === s.sucursalId ? 'Reservando…' : 'Reservar'}</Text>
+                      </PressableScale>
+                    )}
+                  </View>
                 </View>
-                <PriceRangeCard
-                  skuId={skuId}
-                  farmaciaId={f.farmaciaId}
-                  medicamentoNombre={nombreComercial ?? medication.name}
-                />
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
         {/* Estado: no hay producto matcheado todavía */}
         {!skuId && (
-          <View style={styles.infoBanner}>
-            <Text style={styles.infoBannerTitle}>Precio de referencia próximamente</Text>
-            <Text style={styles.infoBannerText}>
-              Estamos calibrando el precio de este medicamento. Mientras tanto, consulta
-              directamente con las farmacias.
-            </Text>
-          </View>
+          <Reveal index={1} delay={80}>
+            <View style={styles.infoBanner}>
+              <Text style={styles.infoBannerTitle}>{t.detail.refSoonTitle}</Text>
+              <Text style={styles.infoBannerText}>{t.detail.refSoonText}</Text>
+            </View>
+          </Reveal>
         )}
 
         {/* Estado: producto matcheado pero sin farmacias afiliadas */}
         {skuId && affiliated.length === 0 && (
-          <View style={styles.infoBanner}>
-            <Text style={styles.infoBannerTitle}>Sin farmacias afiliadas aún</Text>
-            <Text style={styles.infoBannerText}>
-              Pronto tendremos farmacias afiliadas con precios estimados y reserva por WhatsApp.
-            </Text>
-          </View>
+          <Reveal index={1} delay={80}>
+            <View style={styles.infoBanner}>
+              <Text style={styles.infoBannerTitle}>{t.detail.noAffiliatedTitle}</Text>
+              <Text style={styles.infoBannerText}>{t.detail.noAffiliatedText}</Text>
+            </View>
+          </Reveal>
         )}
 
         {/* Legado: card compacto del mejor precio reportado (se mantiene como referencia
             histórica hasta que se depreque el flujo viejo en Fase 2). */}
         {!skuId && cheapestPharmacy && (
-          <View style={styles.pharmacyCard}>
-            <View style={styles.pharmacyHeader}>
-              <View>
-                <Text style={styles.pharmacyName}>{cheapestPharmacy.pharmacyName}</Text>
-                <View style={styles.locationRow}>
-                  <MapPin size={14} color="#666666" />
-                  <Text style={styles.locationText}>{cheapestPharmacy.pharmacyAddress}</Text>
+          <Reveal index={2} delay={120}>
+            <View style={styles.pharmacyCard}>
+              <View style={styles.pharmacyHeader}>
+                <View>
+                  <Text style={styles.pharmacyName}>{cheapestPharmacy.pharmacyName}</Text>
+                  <View style={styles.locationRow}>
+                    <MapPin size={14} color={theme.colors.textSecondary} />
+                    <Text style={styles.locationText}>{cheapestPharmacy.pharmacyAddress}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.priceContainer}>
-              <Text style={styles.priceLabel}>Mejor precio reportado</Text>
-              <Text style={styles.price}>RD${minPrice.toFixed(2)}</Text>
-            </View>
-
-            {savings > 0 && (
-              <View style={styles.savingsBadge}>
-                <Text style={styles.savingsBadgeText}>
-                  💰 Ahorras RD${savings.toFixed(2)} vs promedio
-                </Text>
+              <View style={styles.priceContainer}>
+                <Text style={styles.priceLabel}>{t.detail.bestReported}</Text>
+                <Text style={styles.price}>RD${minPrice.toFixed(2)}</Text>
               </View>
-            )}
-          </View>
+
+              {savings > 0 && (
+                <View style={styles.savingsBadge}>
+                  <Text style={styles.savingsBadgeText}>
+                    💰 {t.detail.savings} RD${savings.toFixed(2)} {t.detail.vsAverage}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Reveal>
         )}
 
         {medication.genericName && medication.genericName !== medication.name && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Opción genérica disponible</Text>
-            <View style={styles.genericCard}>
-              <View style={styles.genericLeft}>
-                <Text style={styles.genericBadge}>GENÉRICO</Text>
-                <Text style={styles.genericName}>{medication.genericName}</Text>
+          <Reveal index={3} delay={140}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.detail.genericAvailable}</Text>
+              <View style={styles.genericCard}>
+                <View style={styles.genericLeft}>
+                  <Text style={styles.genericBadge}>{t.detail.generic}</Text>
+                  <Text style={styles.genericName}>{medication.genericName}</Text>
+                </View>
               </View>
             </View>
-          </View>
+          </Reveal>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Disponibilidad</Text>
-          <View style={styles.availabilityGrid}>
-            {AVAILABILITY_DAYS.map((item, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.availabilityDay,
-                  item.available && styles.availabilityDayActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.availabilityDayText,
-                    item.available && styles.availabilityDayTextActive,
-                  ]}
-                >
-                  {item.day}
-                </Text>
+        <Reveal index={4} delay={160}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.detail.availability}</Text>
+            <View style={styles.card}>
+              <View style={styles.availabilityGrid}>
+                {AVAILABILITY_DAYS.map((item, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.availabilityDay,
+                      item.available && styles.availabilityDayActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.availabilityDayText,
+                        item.available && styles.availabilityDayTextActive,
+                      ]}
+                    >
+                      {item.day}
+                    </Text>
+                  </View>
+                ))}
               </View>
-            ))}
+              <Text style={styles.availabilityNote}>{t.detail.schedule}</Text>
+            </View>
           </View>
-          <Text style={styles.availabilityNote}>
-            Lunes a Viernes: 8:00 AM - 8:00 PM
-          </Text>
-        </View>
+        </Reveal>
 
         {medication.prices.length > 1 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Otras farmacias</Text>
-            {medication.prices.slice(1).map((priceData, index) => (
-              <View key={index} style={styles.otherPharmacyCard}>
-                <View style={styles.otherPharmacyLeft}>
-                  <Text style={styles.otherPharmacyName}>
-                    {priceData.pharmacyName}
-                  </Text>
-                  <Text style={styles.otherPharmacyAddress}>
-                    {priceData.pharmacyAddress}
+          <Reveal index={5} delay={180}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.detail.otherPharmacies}</Text>
+              {medication.prices.slice(1).map((priceData, index) => (
+                <View key={index} style={styles.otherPharmacyCard}>
+                  <View style={styles.otherPharmacyLeft}>
+                    <Text style={styles.otherPharmacyName}>
+                      {priceData.pharmacyName}
+                    </Text>
+                    <Text style={styles.otherPharmacyAddress}>
+                      {priceData.pharmacyAddress}
+                    </Text>
+                    {userLoc && priceData.latitude && priceData.longitude && (
+                      <View style={styles.distanceRow}>
+                        <Navigation size={12} color={theme.colors.accent} />
+                        <Text style={styles.distanceText}>
+                          {formatDistance(distanceKm(userLoc.lat, userLoc.lng, priceData.latitude, priceData.longitude))} {t.detail.away}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.otherPharmacyPrice}>
+                    RD${priceData.price.toFixed(2)}
                   </Text>
                 </View>
-                <Text style={styles.otherPharmacyPrice}>
-                  RD${priceData.price.toFixed(2)}
-                </Text>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          </Reveal>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sobre este medicamento</Text>
-          <Text style={styles.description}>
-            {medication.category} - {medication.name}
-            {medication.genericName && ` (${medication.genericName})`}
-          </Text>
-        </View>
+        <Reveal index={6} delay={200}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.detail.aboutThis}</Text>
+            <View style={styles.card}>
+              <Text style={styles.description}>
+                {medication.category} - {medication.name}
+                {medication.genericName && ` (${medication.genericName})`}
+              </Text>
+            </View>
+          </View>
+        </Reveal>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: 20 + insets.bottom }]}>
-        <View style={styles.directionsRow}>
-          <TouchableOpacity
-            style={styles.directionsButton}
-            onPress={() => {
-              const lat = medication.prices[0]?.latitude;
-              const lng = medication.prices[0]?.longitude;
-              if (!lat || !lng) return;
-              const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-              if (Platform.OS === 'web') {
-                window.open(url, '_blank');
-              } else {
-                Linking.openURL(url);
-              }
-            }}
+      {mapCoords && (
+        <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
+          <PressableScale
+            style={styles.mapButton}
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/map',
+                params: {
+                  focusLat: String(mapCoords.lat),
+                  focusLng: String(mapCoords.lng),
+                  focusName: mapCoords.name,
+                  focusAddr: mapCoords.addr,
+                  focusMed: medication.name,
+                  focusPrice: String(mapCoords.price ?? 0),
+                  focusNav: '1',
+                },
+              })
+            }
           >
-            <Navigation size={18} color="#FFFFFF" />
-            <Text style={styles.directionsButtonText}>Google Maps</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.wazeButton}
-            onPress={() => {
-              const lat = medication.prices[0]?.latitude;
-              const lng = medication.prices[0]?.longitude;
-              if (!lat || !lng) return;
-              const url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
-              if (Platform.OS === 'web') {
-                window.open(url, '_blank');
-              } else {
-                Linking.openURL(url);
-              }
-            }}
-          >
-            <ExternalLink size={18} color="#106B4F" />
-            <Text style={styles.wazeButtonText}>Waze</Text>
-          </TouchableOpacity>
+            <MapIcon size={18} color={theme.colors.white} />
+            <Text style={styles.mapButtonText}>{t.detail.seeOnMap}</Text>
+          </PressableScale>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -311,135 +513,116 @@ export default function DetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 28,
-    color: '#FFFFFF',
-  },
-  headerSubtitle: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 4,
+    backgroundColor: theme.colors.bg,
   },
   content: {
     flex: 1,
   },
+  contentInner: {
+    paddingBottom: theme.spacing.xl,
+  },
+  header: {
+    paddingHorizontal: theme.spacing.xl,
+    paddingBottom: theme.spacing.lg,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
+  },
+  headerTitle: {
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+  },
+  categoryChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: theme.colors.accentSoft,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 5,
+    borderRadius: theme.radius.pill,
+    marginTop: theme.spacing.sm,
+  },
+  categoryChipText: {
+    ...theme.text.label,
+    color: theme.colors.accent,
+  },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    ...theme.shadow.card,
+  },
   pharmacyCard: {
-    backgroundColor: '#FFFFFF',
-    margin: 20,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.xl,
+    marginBottom: theme.spacing.xxl,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    ...theme.shadow.card,
   },
   pharmacyHeader: {
-    marginBottom: 16,
+    marginBottom: theme.spacing.lg,
   },
   pharmacyName: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
-    color: '#052419',
-    marginBottom: 4,
+    ...theme.text.h3,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.xs,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: theme.spacing.xs,
   },
   locationText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
   },
   priceContainer: {
-    paddingVertical: 20,
+    paddingVertical: theme.spacing.xl,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#F0F0F0',
+    borderColor: theme.colors.border,
     alignItems: 'center',
   },
   priceLabel: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 4,
+    ...theme.text.bodyMedium,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.xs,
   },
   price: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 42,
-    color: '#106B4F',
+    color: theme.colors.accent,
   },
   savingsBadge: {
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 16,
+    backgroundColor: theme.colors.warningSoft,
+    borderRadius: theme.radius.sm,
+    padding: theme.spacing.md,
+    marginTop: theme.spacing.lg,
   },
   savingsBadgeText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#F57C00',
+    ...theme.text.bodyMedium,
+    color: theme.colors.warning,
     textAlign: 'center',
   },
-  insuranceBadge: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  insuranceBadgeIcon: {
-    fontSize: 28,
-  },
-  insuranceBadgeContent: {
-    flex: 1,
-  },
-  insuranceBadgeTitle: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#1976D2',
-    marginBottom: 2,
-  },
-  insuranceBadgeSubtitle: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#1976D2',
-    opacity: 0.8,
-  },
   section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    paddingHorizontal: theme.spacing.xl,
+    marginBottom: theme.spacing.xxl,
   },
   sectionTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 16,
-    color: '#052419',
-    marginBottom: 12,
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.md,
   },
   pharmacyBlock: {
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   pharmacyBlockHeader: {
     flexDirection: 'row',
@@ -449,210 +632,279 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   pharmacyBlockName: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 14,
-    color: '#052419',
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
   },
   pharmacyBlockAddr: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
     flex: 1,
   },
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    marginTop: 4,
+  },
+  distanceText: {
+    ...theme.text.caption,
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
+  },
+  dispCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  dispHead: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm },
+  dispName: { ...theme.text.h3, color: theme.colors.textPrimary },
+  dispPrice: { ...theme.text.h3, color: theme.colors.accent },
+  dispActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+  },
+  dispRoute: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+  },
+  dispRouteText: { ...theme.text.button, color: theme.colors.accent, fontSize: 13 },
+  dispReservar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    ...theme.shadow.accent,
+  },
+  dispReservarText: { ...theme.text.button, color: theme.colors.accentText, fontSize: 13 },
+  dispReservada: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.successSoft,
+  },
+  dispReservadaText: { ...theme.text.button, color: theme.colors.success, fontSize: 13 },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    height: 54,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    ...theme.shadow.accent,
+  },
+  mapButtonText: {
+    ...theme.text.button,
+    fontFamily: theme.font.bold,
+    fontSize: 16,
+    color: theme.colors.white,
+  },
   descuentoBadge: {
-    backgroundColor: '#34C26A',
-    paddingHorizontal: 8,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.sm,
     paddingVertical: 3,
-    borderRadius: 8,
-    marginLeft: 8,
+    borderRadius: theme.radius.sm,
+    marginLeft: theme.spacing.sm,
   },
   descuentoText: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 11,
-    color: '#FFFFFF',
+    ...theme.text.label,
+    color: theme.colors.white,
   },
   infoBanner: {
-    backgroundColor: 'rgba(52, 194, 106, 0.08)',
+    backgroundColor: theme.colors.accentSofter,
     borderLeftWidth: 3,
-    borderLeftColor: '#34C26A',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 14,
-    borderRadius: 8,
+    borderLeftColor: theme.colors.accent,
+    marginHorizontal: theme.spacing.xl,
+    marginBottom: theme.spacing.xl,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.md,
+    ...theme.shadow.sm,
   },
   infoBannerTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 14,
-    color: '#106B4F',
-    marginBottom: 4,
+    ...theme.text.h3,
+    color: theme.colors.accent,
+    marginBottom: theme.spacing.xs,
   },
   infoBannerText: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#052419',
-    lineHeight: 18,
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
   },
   genericCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#34C26A',
+    borderColor: theme.colors.accent,
+    ...theme.shadow.card,
   },
   genericLeft: {
     flex: 1,
   },
   genericBadge: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 10,
-    color: '#106B4F',
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    ...theme.text.label,
+    color: theme.colors.accent,
+    backgroundColor: theme.colors.accentSoft,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.radius.xs,
     alignSelf: 'flex-start',
     marginBottom: 6,
+    overflow: 'hidden',
   },
   genericName: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: '#052419',
-  },
-  genericPrice: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 24,
-    color: '#106B4F',
+    ...theme.text.bodyMedium,
+    color: theme.colors.textPrimary,
   },
   availabilityGrid: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
   },
   availabilityDay: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0F0F0',
+    width: 40,
+    height: 40,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.bgSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   availabilityDayActive: {
-    backgroundColor: '#34C26A',
+    backgroundColor: theme.colors.accent,
   },
   availabilityDayText: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 14,
-    color: '#999999',
+    ...theme.text.title,
+    color: theme.colors.textMuted,
   },
   availabilityDayTextActive: {
-    color: '#052419',
+    color: theme.colors.white,
   },
   availabilityNote: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
   },
   description: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: '#666666',
-    lineHeight: 22,
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
   },
   footer: {
-    padding: 20,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderTopColor: theme.colors.border,
+    ...theme.shadow.md,
   },
   directionsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: theme.spacing.md,
   },
   directionsButton: {
     flex: 1,
-    backgroundColor: '#106B4F',
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    gap: theme.spacing.sm,
+    ...theme.shadow.accent,
   },
   directionsButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: theme.colors.white,
   },
   wazeButton: {
     flex: 1,
-    backgroundColor: '#F0F7F2',
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: theme.colors.accentSofter,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#D4E8DA',
+    gap: theme.spacing.sm,
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
   },
   wazeButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 14,
-    color: '#106B4F',
+    color: theme.colors.accent,
   },
   loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: theme.spacing.xl,
   },
   emptyStateTitle: {
-    fontFamily: 'Poppins-SemiBold',
-    fontSize: 18,
-    color: '#052419',
-    marginBottom: 16,
+    ...theme.text.h2,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.lg,
+    textAlign: 'center',
   },
   backButtonEmpty: {
-    backgroundColor: '#106B4F',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.xxl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.pill,
+    alignSelf: 'center',
+    ...theme.shadow.accent,
   },
   backButtonText: {
-    fontFamily: 'DMSans-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: theme.colors.white,
   },
   otherPharmacyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
+    ...theme.shadow.card,
   },
   otherPharmacyLeft: {
     flex: 1,
-    marginRight: 12,
+    marginRight: theme.spacing.md,
   },
   otherPharmacyName: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 15,
-    color: '#052419',
-    marginBottom: 4,
+    ...theme.text.title,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.xs,
   },
   otherPharmacyAddress: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
   },
   otherPharmacyPrice: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 18,
-    color: '#106B4F',
+    color: theme.colors.accent,
   },
 });

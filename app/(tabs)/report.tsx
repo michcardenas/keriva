@@ -4,14 +4,15 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Image,
   Modal,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
@@ -22,6 +23,7 @@ import {
   Store,
   DollarSign,
   Search as SearchIcon,
+  ChevronRight,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/lib/AuthContext';
@@ -29,10 +31,19 @@ import { createPriceReport } from '@/lib/api/precios';
 import { getAllMedicationOptions, type MedicationOption } from '@/lib/api/medicamentos';
 import { getAllPharmacyOptions, type PharmacyOption } from '@/lib/api/farmacias';
 import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 export default function ReportScreen() {
   const router = useRouter();
-  const { user, session } = useAuth();
+  const { t } = useLanguage();
+  const { user, session, perfil } = useAuth();
+  // Rol farmacia: la farmacia queda fija a la del usuario (campo informativo).
+  const isFarmaciaRole = perfil?.rol === 'farmacia' && perfil?.farmaciaId != null;
 
   const [medications, setMedications] = useState<MedicationOption[]>([]);
   const [pharmacies, setPharmacies] = useState<PharmacyOption[]>([]);
@@ -44,6 +55,7 @@ export default function ReportScreen() {
 
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [pharmModalOpen, setPharmModalOpen] = useState(false);
+  const [priceFocused, setPriceFocused] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +67,13 @@ export default function ReportScreen() {
       const [m, p] = await Promise.all([getAllMedicationOptions(), getAllPharmacyOptions()]);
       setMedications(m);
       setPharmacies(p);
+      // Rol farmacia: fijar automáticamente la farmacia del usuario.
+      if (perfil?.rol === 'farmacia' && perfil.farmaciaId != null) {
+        const mine = p.find((x) => x.id === perfil.farmaciaId);
+        if (mine) setSelectedPharm(mine);
+      }
     })();
-  }, [session]);
+  }, [session, perfil?.rol, perfil?.farmaciaId]);
 
   const canSubmit = useMemo(() => {
     const n = parseFloat(price);
@@ -69,7 +86,7 @@ export default function ReportScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted && perm.canAskAgain === false) {
-        setError('Necesitas permitir acceso a tus fotos para adjuntar una imagen');
+        setError(t.reportScreen.photoPermLibrary);
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -81,7 +98,7 @@ export default function ReportScreen() {
         setPhotoUri(result.assets[0].uri);
       }
     } catch {
-      setError('No se pudo acceder a la galería');
+      setError(t.reportScreen.galleryError);
     }
   }
 
@@ -89,7 +106,7 @@ export default function ReportScreen() {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        setError('Necesitas permitir acceso a la cámara');
+        setError(t.reportScreen.cameraPerm);
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -100,7 +117,7 @@ export default function ReportScreen() {
         setPhotoUri(result.assets[0].uri);
       }
     } catch {
-      setError('No se pudo acceder a la cámara');
+      setError(t.reportScreen.cameraError);
     }
   }
 
@@ -135,9 +152,9 @@ export default function ReportScreen() {
   if (!session) {
     return (
       <AuthRequiredPlaceholder
-        icon={<CameraIcon size={56} color="#34C26A" />}
-        title="Reporta precios y gana puntos"
-        description="Crea tu cuenta gratuita para reportar precios de medicamentos y ayudar a la comunidad dominicana a ahorrar."
+        icon={<CameraIcon size={56} color={theme.colors.accent} />}
+        title={t.reportScreen.authTitle}
+        description={t.reportScreen.authDesc}
       />
     );
   }
@@ -145,152 +162,216 @@ export default function ReportScreen() {
   if (success) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#106B4F', '#052419']} style={styles.successContainer}>
-          <View style={styles.successIconCircle}>
-            <Check size={56} color="#FFFFFF" strokeWidth={3} />
-          </View>
-          <Text style={styles.successTitle}>¡Reporte enviado!</Text>
-          <Text style={styles.successText}>
-            Gracias por contribuir. Ganaste{' '}
-            <Text style={styles.successPoints}>+{pointsPreview} puntos</Text>.
-          </Text>
-          <Text style={styles.successHint}>
-            Tu reporte queda pendiente de verificación. Cuando sea verificado ganarás{' '}
-            <Text style={styles.bold}>+20 puntos extra</Text>.
-          </Text>
+        <PillBackground />
+        <View style={styles.successContainer}>
+          <Reveal variant="up" delay={60}>
+            <View style={styles.successIconCircle}>
+              <Check size={56} color={theme.colors.white} strokeWidth={3} />
+            </View>
+          </Reveal>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.successTitle}>{t.reportScreen.sentTitle}</Text>
+          </Reveal>
+          <Reveal index={2} delay={160}>
+            <Text style={styles.successText}>
+              {t.reportScreen.thanksEarned}{' '}
+              <Text style={styles.successPoints}>+{pointsPreview} {t.reportScreen.points}</Text>.
+            </Text>
+          </Reveal>
+          <Reveal index={3} delay={200}>
+            <Text style={styles.successHint}>
+              {t.reportScreen.pendingVerification}{' '}
+              <Text style={styles.bold}>{t.reportScreen.extraPoints}</Text>.
+            </Text>
+          </Reveal>
 
-          <TouchableOpacity style={styles.successPrimary} onPress={resetForm}>
-            <Text style={styles.successPrimaryText}>Reportar otro precio</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.successSecondary}
-            onPress={() => router.push('/(tabs)/profile')}
-          >
-            <Text style={styles.successSecondaryText}>Ver mi perfil</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+          <Reveal index={4} delay={240} style={styles.successButtons}>
+            <PressableScale style={styles.successPrimary} onPress={resetForm}>
+              <Text style={styles.successPrimaryText}>{t.reportScreen.reportAnother}</Text>
+            </PressableScale>
+            <PressableScale
+              style={styles.successSecondary}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              <Text style={styles.successSecondaryText}>{t.reportScreen.seeProfile}</Text>
+            </PressableScale>
+          </Reveal>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#106B4F', '#052419']} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Reportar precio</Text>
-        <Text style={styles.headerSubtitle}>Ayuda a otros a encontrar mejores precios</Text>
-      </LinearGradient>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        <Reveal variant="up" delay={60}>
+          <PressableScale
+            style={styles.backButton}
+            onPress={() => router.push('/(tabs)')}
+            scaleTo={0.9}
+          >
+            <ArrowLeft size={22} color={theme.colors.textPrimary} />
+          </PressableScale>
+          <Text style={styles.headerTitle}>{t.reportScreen.headerTitle}</Text>
+          <Text style={styles.headerSubtitle}>{t.reportScreen.headerSubtitle}</Text>
+        </Reveal>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
-        <Text style={styles.label}>Medicamento</Text>
-        <TouchableOpacity
-          style={styles.selector}
-          onPress={() => setMedModalOpen(true)}
-          disabled={submitting}
-        >
-          <Pill size={20} color="#106B4F" />
-          <View style={styles.selectorTextBox}>
-            {selectedMed ? (
-              <>
-                <Text style={styles.selectorValue}>{selectedMed.name}</Text>
-                <Text style={styles.selectorMeta}>
-                  {selectedMed.dosage} · {selectedMed.category}
-                </Text>
-              </>
+        <View style={styles.form}>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.label}>{t.reportScreen.medication}</Text>
+            <PressableScale
+              style={[styles.selector, selectedMed && styles.selectorActive]}
+              onPress={() => setMedModalOpen(true)}
+              disabled={submitting}
+            >
+              <Pill size={20} color={selectedMed ? theme.colors.accent : theme.colors.textMuted} />
+              <View style={styles.selectorTextBox}>
+                {selectedMed ? (
+                  <>
+                    <Text style={styles.selectorValue}>{selectedMed.name}</Text>
+                    <Text style={styles.selectorMeta}>
+                      {selectedMed.dosage} · {selectedMed.category}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.selectorPlaceholder}>{t.reportScreen.selectMedication}</Text>
+                )}
+              </View>
+              <ChevronRight size={20} color={theme.colors.textMuted} />
+            </PressableScale>
+          </Reveal>
+
+          <Reveal index={2} delay={160}>
+            <Text style={styles.label}>{t.reportScreen.pharmacy}</Text>
+            {isFarmaciaRole ? (
+              // Rol farmacia: campo informativo "Mi farmacia" (no seleccionable).
+              <View style={[styles.selector, styles.selectorActive]}>
+                <Store size={20} color={theme.colors.accent} />
+                <View style={styles.selectorTextBox}>
+                  <Text style={styles.selectorValue}>{selectedPharm?.name ?? 'Mi farmacia'}</Text>
+                  <Text style={styles.selectorMeta}>
+                    {selectedPharm?.city ? `${selectedPharm.city} · Mi farmacia` : 'Mi farmacia'}
+                  </Text>
+                </View>
+              </View>
             ) : (
-              <Text style={styles.selectorPlaceholder}>Seleccionar medicamento</Text>
+              <PressableScale
+                style={[styles.selector, selectedPharm && styles.selectorActive]}
+                onPress={() => setPharmModalOpen(true)}
+                disabled={submitting}
+              >
+                <Store size={20} color={selectedPharm ? theme.colors.accent : theme.colors.textMuted} />
+                <View style={styles.selectorTextBox}>
+                  {selectedPharm ? (
+                    <>
+                      <Text style={styles.selectorValue}>{selectedPharm.name}</Text>
+                      <Text style={styles.selectorMeta}>{selectedPharm.city}</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.selectorPlaceholder}>{t.reportScreen.selectPharmacy}</Text>
+                  )}
+                </View>
+                <ChevronRight size={20} color={theme.colors.textMuted} />
+              </PressableScale>
             )}
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
+          </Reveal>
 
-        <Text style={styles.label}>Farmacia</Text>
-        <TouchableOpacity
-          style={styles.selector}
-          onPress={() => setPharmModalOpen(true)}
-          disabled={submitting}
-        >
-          <Store size={20} color="#106B4F" />
-          <View style={styles.selectorTextBox}>
-            {selectedPharm ? (
-              <>
-                <Text style={styles.selectorValue}>{selectedPharm.name}</Text>
-                <Text style={styles.selectorMeta}>{selectedPharm.city}</Text>
-              </>
+          {/* Bug 5: NO envolver el TextInput del precio en <Reveal>. La animación
+              `entering` de Reanimated le roba el foco al input en Android (el
+              teclado se abre y se cierra y no deja escribir). Usamos un View plano. */}
+          <View>
+            <Text style={styles.label}>{t.reportScreen.priceLabel}</Text>
+            <View style={[styles.priceInput, priceFocused && styles.selectorActive]}>
+              <DollarSign
+                size={20}
+                color={priceFocused ? theme.colors.accent : theme.colors.textMuted}
+              />
+              <TextInput
+                style={styles.priceField}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={theme.colors.textMuted}
+                value={price}
+                onChangeText={setPrice}
+                editable={!submitting}
+                onFocus={() => setPriceFocused(true)}
+                onBlur={() => setPriceFocused(false)}
+              />
+            </View>
+          </View>
+
+          <Reveal index={4} delay={240}>
+            <Text style={styles.label}>{t.reportScreen.photoLabel}</Text>
+            {photoUri ? (
+              <View style={styles.photoPreviewBox}>
+                <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+                <PressableScale
+                  style={styles.photoRemove}
+                  onPress={() => setPhotoUri(null)}
+                  scaleTo={0.85}
+                >
+                  <X size={16} color={theme.colors.white} />
+                </PressableScale>
+              </View>
             ) : (
-              <Text style={styles.selectorPlaceholder}>Seleccionar farmacia</Text>
+              <View style={styles.photoActions}>
+                <PressableScale style={styles.photoBtn} onPress={handleTakePhoto} scaleTo={0.95}>
+                  <CameraIcon size={20} color={theme.colors.accent} />
+                  <Text style={styles.photoBtnText}>{t.reportScreen.takePhoto}</Text>
+                </PressableScale>
+                <PressableScale style={styles.photoBtn} onPress={handlePickImage} scaleTo={0.95}>
+                  <SearchIcon size={20} color={theme.colors.accent} />
+                  <Text style={styles.photoBtnText}>{t.reportScreen.chooseFile}</Text>
+                </PressableScale>
+              </View>
             )}
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
+          </Reveal>
 
-        <Text style={styles.label}>Precio en RD$</Text>
-        <View style={styles.priceInput}>
-          <DollarSign size={20} color="#106B4F" />
-          <TextInput
-            style={styles.priceField}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            placeholderTextColor="#999"
-            value={price}
-            onChangeText={setPrice}
-            editable={!submitting}
-          />
-        </View>
-
-        <Text style={styles.label}>Foto del precio (opcional · +15 puntos)</Text>
-        {photoUri ? (
-          <View style={styles.photoPreviewBox}>
-            <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-            <TouchableOpacity style={styles.photoRemove} onPress={() => setPhotoUri(null)}>
-              <X size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.photoActions}>
-            <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhoto}>
-              <CameraIcon size={20} color="#106B4F" />
-              <Text style={styles.photoBtnText}>Tomar foto</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.photoBtn} onPress={handlePickImage}>
-              <SearchIcon size={20} color="#106B4F" />
-              <Text style={styles.photoBtnText}>Elegir archivo</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {error && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <View style={styles.pointsPreview}>
-          <Text style={styles.pointsPreviewLabel}>Ganarás</Text>
-          <Text style={styles.pointsPreviewValue}>+{pointsPreview} puntos</Text>
-          <Text style={styles.pointsPreviewHint}>
-            {photoUri ? '10 base + 15 por foto' : '+15 extra si agregas foto'}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.submit, (!canSubmit || submitting) && styles.submitDisabled]}
-          onPress={handleSubmit}
-          disabled={!canSubmit || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitText}>Enviar reporte</Text>
+          {error && (
+            <Reveal variant="fade">
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            </Reveal>
           )}
-        </TouchableOpacity>
-      </ScrollView>
+
+          <Reveal index={5} delay={280}>
+            <View style={styles.pointsPreview}>
+              <Text style={styles.pointsPreviewLabel}>{t.reportScreen.willEarn}</Text>
+              <Text style={styles.pointsPreviewValue}>+{pointsPreview} {t.reportScreen.points}</Text>
+              <Text style={styles.pointsPreviewHint}>
+                {photoUri ? t.reportScreen.photoBreakdown : t.reportScreen.photoExtra}
+              </Text>
+            </View>
+          </Reveal>
+
+          <Reveal index={6} delay={320}>
+            <PressableScale
+              style={[styles.submit, (!canSubmit || submitting) && styles.submitDisabled]}
+              onPress={handleSubmit}
+              disabled={!canSubmit || submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={theme.colors.white} />
+              ) : (
+                <Text
+                  style={[
+                    styles.submitText,
+                    (!canSubmit || submitting) && styles.submitTextDisabled,
+                  ]}
+                >
+                  {t.reportScreen.submit}
+                </Text>
+              )}
+            </PressableScale>
+          </Reveal>
+        </View>
+      </KeyboardAwareScreen>
 
       <PickerModal
         visible={medModalOpen}
-        title="Seleccionar medicamento"
+        title={t.reportScreen.selectMedication}
         items={medications}
         keyExtractor={(m) => String(m.id)}
         onSelect={(m) => {
@@ -300,12 +381,13 @@ export default function ReportScreen() {
         onClose={() => setMedModalOpen(false)}
         renderPrimary={(m) => m.name}
         renderSecondary={(m) => `${m.dosage} · ${m.category}`}
-        searchPlaceholder="Buscar medicamento..."
+        searchPlaceholder={t.reportScreen.searchMedication}
+        emptyText={t.reportScreen.noResults}
       />
 
       <PickerModal
         visible={pharmModalOpen}
-        title="Seleccionar farmacia"
+        title={t.reportScreen.selectPharmacy}
         items={pharmacies}
         keyExtractor={(p) => String(p.id)}
         onSelect={(p) => {
@@ -315,7 +397,8 @@ export default function ReportScreen() {
         onClose={() => setPharmModalOpen(false)}
         renderPrimary={(p) => p.name}
         renderSecondary={(p) => `${p.city} · ${p.address}`}
-        searchPlaceholder="Buscar farmacia..."
+        searchPlaceholder={t.reportScreen.searchPharmacy}
+        emptyText={t.reportScreen.noResults}
       />
     </View>
   );
@@ -331,10 +414,13 @@ type PickerModalProps<T> = {
   renderPrimary: (item: T) => string;
   renderSecondary: (item: T) => string;
   searchPlaceholder: string;
+  emptyText: string;
 };
 
 function PickerModal<T>(props: PickerModalProps<T>) {
   const [query, setQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const insets = useSafeAreaInsets();
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return props.items;
@@ -352,304 +438,394 @@ function PickerModal<T>(props: PickerModalProps<T>) {
       transparent
       onRequestClose={props.onClose}
     >
-      <View style={modalStyles.backdrop}>
-        <View style={modalStyles.sheet}>
+      <KeyboardAvoidingView
+        style={modalStyles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={[modalStyles.sheet, { paddingBottom: Math.max(insets.bottom, theme.spacing.lg) }]}>
+          {/* Fondito de cápsulas detrás de la lista */}
+          <PillBackground opacity={0.45} />
+
+          <View style={modalStyles.handle} />
           <View style={modalStyles.header}>
             <Text style={modalStyles.title}>{props.title}</Text>
-            <TouchableOpacity onPress={props.onClose}>
-              <X size={22} color="#052419" />
-            </TouchableOpacity>
+            <PressableScale onPress={props.onClose} scaleTo={0.85} style={modalStyles.closeBtn}>
+              <X size={22} color={theme.colors.textPrimary} />
+            </PressableScale>
           </View>
-          <View style={modalStyles.searchBox}>
-            <SearchIcon size={18} color="#666" />
+          <View style={[modalStyles.searchBox, searchFocused && modalStyles.searchBoxFocused]}>
+            <SearchIcon size={18} color={searchFocused ? theme.colors.accent : theme.colors.textMuted} />
             <TextInput
               style={modalStyles.searchInput}
               placeholder={props.searchPlaceholder}
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.colors.textMuted}
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              autoCorrect={false}
             />
           </View>
           <FlatList
             data={filtered}
             keyExtractor={props.keyExtractor}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: theme.spacing.lg }}
             renderItem={({ item }) => (
-              <TouchableOpacity style={modalStyles.item} onPress={() => props.onSelect(item)}>
+              <PressableScale
+                style={modalStyles.item}
+                onPress={() => props.onSelect(item)}
+                scaleTo={0.98}
+              >
                 <Text style={modalStyles.itemPrimary}>{props.renderPrimary(item)}</Text>
                 <Text style={modalStyles.itemSecondary}>{props.renderSecondary(item)}</Text>
-              </TouchableOpacity>
+              </PressableScale>
             )}
             ListEmptyComponent={
-              <Text style={modalStyles.empty}>No se encontraron resultados</Text>
+              <Text style={modalStyles.empty}>{props.emptyText}</Text>
             }
           />
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  header: { paddingTop: 60, paddingBottom: 24, paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: {
+    flexGrow: 1,
+    padding: theme.spacing.xl,
+    paddingTop: 50,
+    paddingBottom: theme.spacing.huge,
+  },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: theme.spacing.lg,
+    ...theme.shadow.sm,
   },
-  headerTitle: { fontFamily: 'Poppins-Bold', fontSize: 24, color: '#FFFFFF' },
+  headerTitle: {
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+  },
   headerSubtitle: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 2,
+    ...theme.text.body,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
   },
-  content: { flex: 1 },
-  contentInner: { padding: 20, paddingBottom: 40 },
+  form: { marginTop: theme.spacing.xl, gap: theme.spacing.md },
   label: {
-    fontFamily: 'DMSans-Bold',
-    fontSize: 13,
-    color: '#052419',
-    marginBottom: 8,
-    marginTop: 16,
+    ...theme.text.label,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
   },
   selector: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  selectorActive: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
   },
   selectorTextBox: { flex: 1 },
   selectorPlaceholder: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: '#999999',
+    color: theme.colors.textMuted,
   },
   selectorValue: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 15,
-    color: '#052419',
+    color: theme.colors.textPrimary,
   },
   selectorMeta: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
-  chevron: { fontSize: 28, color: '#999', fontWeight: '300' },
   priceInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
   },
   priceField: {
     flex: 1,
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 22,
-    color: '#052419',
-    paddingVertical: 0,
+    color: theme.colors.textPrimary,
+    paddingVertical: theme.spacing.xs,
   },
-  photoActions: { flexDirection: 'row', gap: 10 },
+  photoActions: { flexDirection: 'row', gap: theme.spacing.md },
   photoBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#106B4F',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.accentSofter,
+    borderRadius: theme.radius.pill,
+    paddingVertical: theme.spacing.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
   },
-  photoBtnText: { fontFamily: 'DMSans-Bold', fontSize: 13, color: '#106B4F' },
-  photoPreviewBox: { borderRadius: 12, overflow: 'hidden', position: 'relative' },
+  photoBtnText: {
+    ...theme.text.bodyMedium,
+    fontFamily: theme.font.bodyBold,
+    fontSize: 13,
+    color: theme.colors.accent,
+  },
+  photoPreviewBox: {
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+    position: 'relative',
+    ...theme.shadow.card,
+  },
   photoPreview: { width: '100%', height: 200, resizeMode: 'cover' },
   photoRemove: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
   },
   errorBox: {
-    backgroundColor: '#FFEBEE',
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 12,
+    backgroundColor: theme.colors.dangerSoft,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.sm,
   },
-  errorText: { fontFamily: 'DMSans-Medium', fontSize: 13, color: '#D32F2F' },
+  errorText: {
+    ...theme.text.bodyMedium,
+    fontSize: 13,
+    color: theme.colors.danger,
+  },
   pointsPreview: {
     alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 20,
+    backgroundColor: theme.colors.accentSoft,
+    padding: theme.spacing.xl,
+    borderRadius: theme.radius.lg,
+    marginTop: theme.spacing.sm,
   },
-  pointsPreviewLabel: { fontFamily: 'DMSans-Regular', fontSize: 13, color: '#106B4F' },
+  pointsPreviewLabel: {
+    ...theme.text.bodyMedium,
+    color: theme.colors.textSecondary,
+  },
   pointsPreviewValue: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 26,
-    color: '#106B4F',
-    marginTop: 2,
+    ...theme.text.h1,
+    fontSize: 28,
+    color: theme.colors.accent,
+    marginTop: theme.spacing.xs,
   },
   pointsPreviewHint: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 11,
-    color: '#106B4F',
-    marginTop: 2,
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+    textAlign: 'center',
   },
   submit: {
-    backgroundColor: '#106B4F',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    marginTop: theme.spacing.sm,
+    ...theme.shadow.accent,
   },
-  submitDisabled: { backgroundColor: '#999' },
-  submitText: { fontFamily: 'Poppins-Bold', fontSize: 16, color: '#FFFFFF' },
+  submitDisabled: {
+    backgroundColor: theme.colors.bgSecondary,
+    ...theme.shadow.none,
+  },
+  submitText: {
+    fontFamily: theme.font.bold,
+    fontSize: 16,
+    color: theme.colors.white,
+    letterSpacing: 0.3,
+  },
+  submitTextDisabled: {
+    color: theme.colors.textMuted,
+  },
   successContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    padding: theme.spacing.xxxl,
   },
   successIconCircle: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    backgroundColor: '#34C26A',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: theme.spacing.xxl,
+    alignSelf: 'center',
+    ...theme.shadow.accent,
   },
   successTitle: {
-    fontFamily: 'Poppins-Bold',
+    ...theme.text.h1,
     fontSize: 28,
-    color: '#FFFFFF',
+    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   successText: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 16,
-    color: 'rgba(255,255,255,0.85)',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
-    marginTop: 12,
+    marginTop: theme.spacing.md,
   },
-  successPoints: { fontFamily: 'DMSans-Bold', color: '#34C26A' },
-  bold: { fontFamily: 'DMSans-Bold', color: '#34C26A' },
+  successPoints: { fontFamily: theme.font.bodyBold, color: theme.colors.accent },
+  bold: { fontFamily: theme.font.bodyBold, color: theme.colors.accent },
   successHint: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.caption,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
+    color: theme.colors.textMuted,
     textAlign: 'center',
-    marginTop: 16,
+    marginTop: theme.spacing.lg,
     lineHeight: 20,
   },
+  successButtons: {
+    alignSelf: 'stretch',
+    marginTop: theme.spacing.xxxl,
+    gap: theme.spacing.md,
+  },
   successPrimary: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    marginTop: 32,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 54,
     alignSelf: 'stretch',
     alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.accent,
   },
   successPrimaryText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 15,
-    color: '#106B4F',
+    color: theme.colors.white,
   },
   successSecondary: {
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    marginTop: 12,
+    borderColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 52,
     alignSelf: 'stretch',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentSofter,
   },
   successSecondaryText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: theme.colors.accent,
   },
 });
 
 const modalStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '85%',
-    paddingBottom: 20,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    maxHeight: '88%',
+    minHeight: '55%',
+    overflow: 'hidden',
+    paddingTop: theme.spacing.sm,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
   },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 18, color: '#052419' },
+  title: { ...theme.text.h2, color: theme.colors.textPrimary },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.bgSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F0F0F0',
-    marginHorizontal: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 12,
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.sm,
+  },
+  searchBoxFocused: {
+    borderColor: theme.colors.accent,
   },
   searchInput: {
     flex: 1,
-    fontFamily: 'DMSans-Regular',
+    fontFamily: theme.font.body,
     fontSize: 14,
-    color: '#052419',
+    color: theme.colors.textPrimary,
   },
   item: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: theme.colors.borderLight,
   },
-  itemPrimary: { fontFamily: 'DMSans-Medium', fontSize: 15, color: '#052419' },
+  itemPrimary: {
+    ...theme.text.bodyMedium,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+  },
   itemSecondary: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 12,
-    color: '#666666',
+    ...theme.text.caption,
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   empty: {
-    fontFamily: 'DMSans-Regular',
-    fontSize: 14,
-    color: '#999',
+    ...theme.text.body,
+    color: theme.colors.textMuted,
     textAlign: 'center',
-    padding: 40,
+    padding: theme.spacing.huge,
   },
 });

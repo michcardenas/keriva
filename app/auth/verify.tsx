@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, MailOpen, CheckCircle2 } from 'lucide-react-native';
 import { resendConfirmationEmail } from '@/lib/api/auth';
 import { supabase } from '@/lib/supabase';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import PillBackground from '@/components/ui/PillBackground';
 
 export default function VerifyScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ email?: string }>();
   const email = params.email ?? '';
   const [loading, setLoading] = useState(false);
@@ -38,7 +43,7 @@ export default function VerifyScreen() {
 
   async function handleResend() {
     if (!email) {
-      setError('No se encontró el correo a reenviar');
+      setError(t.auth.noEmailToResend);
       return;
     }
     setLoading(true);
@@ -50,155 +55,208 @@ export default function VerifyScreen() {
       setError(result.error.message);
       return;
     }
-    setInfo('Correo de confirmación reenviado');
+    setInfo(t.auth.confirmationResent);
   }
 
   if (verified) {
     return (
-      <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
+      <View style={styles.container}>
+        <PillBackground />
         <View style={styles.inner}>
           <View style={styles.content}>
-            <Text style={styles.emoji}>✅</Text>
-            <Text style={styles.title}>¡Cuenta verificada!</Text>
-            <Text style={styles.subtitle}>
-              Tu cuenta ha sido confirmada exitosamente.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.replace('/(tabs)')}
-            >
-              <Text style={styles.primaryButtonText}>Comenzar a usar Keriva</Text>
-            </TouchableOpacity>
+            <Reveal variant="up" delay={60}>
+              <View style={styles.badge}>
+                <CheckCircle2 color={theme.colors.white} size={56} />
+              </View>
+            </Reveal>
+            <Reveal index={1} delay={120}>
+              <Text style={styles.title}>{t.auth.accountVerified}</Text>
+            </Reveal>
+            <Reveal index={2} delay={160}>
+              <Text style={styles.subtitle}>{t.auth.accountConfirmed}</Text>
+            </Reveal>
+            <Reveal index={3} delay={200} style={styles.stretch}>
+              <PressableScale
+                style={styles.primaryButton}
+                onPress={() => router.replace('/(tabs)')}
+              >
+                <Text style={styles.primaryButtonText}>{t.auth.startUsingKeriva}</Text>
+              </PressableScale>
+            </Reveal>
           </View>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
+    <View style={styles.container}>
+      <PillBackground />
       <View style={styles.inner}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/auth/login')}>
-          <ArrowLeft color="#FFFFFF" size={24} />
-        </TouchableOpacity>
+        <PressableScale
+          style={styles.backButton}
+          onPress={() => router.replace('/auth/login')}
+          scaleTo={0.9}
+        >
+          <ArrowLeft color={theme.colors.textPrimary} size={22} />
+        </PressableScale>
 
         <View style={styles.content}>
-          <Text style={styles.emoji}>📬</Text>
-          <Text style={styles.title}>Verifica tu correo</Text>
-          <Text style={styles.subtitle}>
-            Te enviamos un enlace de confirmación a{'\n'}
-            <Text style={styles.emailBold}>{email}</Text>
-          </Text>
-          <Text style={styles.hint}>
-            Haz clic en el enlace del correo para activar tu cuenta. Si no lo ves, revisa tu carpeta
-            de spam.
-          </Text>
+          <Reveal variant="up" delay={60}>
+            <View style={styles.badge}>
+              <MailOpen color={theme.colors.white} size={52} />
+            </View>
+          </Reveal>
+          <Reveal index={1} delay={120}>
+            <Text style={styles.title}>{t.auth.verifyEmail}</Text>
+          </Reveal>
+          <Reveal index={2} delay={160}>
+            <Text style={styles.subtitle}>
+              {t.auth.confirmationSentTo}{'\n'}
+              <Text style={styles.emailBold}>{email}</Text>
+            </Text>
+          </Reveal>
+          <Reveal index={3} delay={200}>
+            <Text style={styles.hint}>{t.auth.verifyHint}</Text>
+          </Reveal>
 
-          {info && <Text style={styles.infoText}>{info}</Text>}
-          {error && <Text style={styles.errorText}>{error}</Text>}
+          {info && (
+            <Reveal variant="fade">
+              <Text style={styles.infoText}>{info}</Text>
+            </Reveal>
+          )}
+          {error && (
+            <Reveal variant="fade">
+              <Text style={styles.errorText}>{error}</Text>
+            </Reveal>
+          )}
 
-          <TouchableOpacity
-            style={[styles.secondaryButton, loading && styles.buttonDisabled]}
-            onPress={handleResend}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.secondaryButtonText}>Reenviar correo</Text>
-            )}
-          </TouchableOpacity>
+          <Reveal index={4} delay={240} style={styles.stretch}>
+            <PressableScale
+              style={[styles.secondaryButton, loading && styles.buttonDisabled]}
+              onPress={handleResend}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={theme.colors.accent} />
+              ) : (
+                <Text style={styles.secondaryButtonText}>{t.auth.resendEmail}</Text>
+              )}
+            </PressableScale>
+          </Reveal>
 
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.replace('/auth/login')}
-          >
-            <Text style={styles.primaryButtonText}>Ya confirmé, iniciar sesión</Text>
-          </TouchableOpacity>
+          <Reveal index={5} delay={280} style={styles.stretch}>
+            <PressableScale
+              style={styles.primaryButton}
+              onPress={() => router.replace('/auth/login')}
+            >
+              <Text style={styles.primaryButtonText}>{t.auth.alreadyConfirmed}</Text>
+            </PressableScale>
+          </Reveal>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  inner: { flex: 1, padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  inner: { flex: 1, padding: theme.spacing.xxl, paddingTop: 50 },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: theme.spacing.xxl,
+    ...theme.shadow.sm,
   },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 16 },
-  emoji: { fontSize: 80 },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+  },
+  badge: {
+    width: 112,
+    height: 112,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+    ...theme.shadow.accent,
+  },
   title: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 28,
-    color: '#FFFFFF',
+    ...theme.text.h1,
+    fontSize: 26,
+    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   subtitle: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 16,
-    color: 'rgba(255,255,255,0.85)',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
   },
   emailBold: {
-    fontFamily: 'DMSans-Bold',
-    color: '#34C26A',
+    fontFamily: theme.font.bodyBold,
+    color: theme.colors.accent,
   },
   hint: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.caption,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.65)',
+    color: theme.colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 12,
+    marginBottom: theme.spacing.md,
   },
   infoText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#34C26A',
+    color: theme.colors.accent,
     textAlign: 'center',
   },
   errorText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#FF6B6B',
+    color: theme.colors.danger,
     textAlign: 'center',
   },
   secondaryButton: {
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    alignSelf: 'stretch',
+    borderColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 52,
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentSofter,
+    marginTop: theme.spacing.lg,
   },
   secondaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: theme.colors.accent,
   },
   primaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    alignSelf: 'stretch',
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
     alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.accent,
   },
   primaryButtonText: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 15,
-    color: '#106B4F',
+    fontFamily: theme.font.bold,
+    fontSize: 16,
+    color: theme.colors.white,
+    letterSpacing: 0.3,
   },
   buttonDisabled: { opacity: 0.7 },
+  stretch: { alignSelf: 'stretch' },
 });

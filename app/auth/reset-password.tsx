@@ -4,25 +4,28 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Lock } from 'lucide-react-native';
+import { Lock, CheckCircle2 } from 'lucide-react-native';
 import { updateUserPassword, signOut } from '@/lib/api/auth';
 import { supabase } from '@/lib/supabase';
+import { useLanguage } from '@/lib/LanguageContext';
+import { theme } from '@/lib/theme';
+import PressableScale from '@/components/ui/PressableScale';
+import Reveal from '@/components/ui/Reveal';
+import KeyboardAwareScreen from '@/components/ui/KeyboardAwareScreen';
+import PillBackground from '@/components/ui/PillBackground';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [focused, setFocused] = useState<'password' | 'confirm' | null>(null);
   // Wait for Supabase to establish a recovery session from the URL hash
   const [sessionReady, setSessionReady] = useState(false);
 
@@ -43,7 +46,7 @@ export default function ResetPasswordScreen() {
     // Timeout: if after 8s we still don't have a session, show error
     const timeout = setTimeout(() => {
       setSessionReady((prev) => {
-        if (!prev) setError('El enlace expiró o es inválido. Solicita uno nuevo.');
+        if (!prev) setError(t.auth.linkExpired);
         return prev;
       });
     }, 8000);
@@ -57,11 +60,11 @@ export default function ResetPasswordScreen() {
   async function handleSubmit() {
     setError(null);
     if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres');
+      setError(t.auth.passwordMin6);
       return;
     }
     if (password !== confirm) {
-      setError('Las contraseñas no coinciden');
+      setError(t.auth.passwordsDontMatch);
       return;
     }
     setLoading(true);
@@ -79,180 +82,233 @@ export default function ResetPasswordScreen() {
     router.replace('/auth/login');
   }
 
-  const showForm = sessionReady && !done;
   const showWaiting = !sessionReady && !error && !done;
 
   return (
-    <LinearGradient colors={['#052419', '#106B4F', '#052419']} style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>Nueva contraseña</Text>
-            <Text style={styles.subtitle}>
-              {showWaiting ? 'Verificando enlace...' : 'Elige una contraseña segura'}
-            </Text>
-          </View>
-
-          {showWaiting && (
-            <View style={styles.waitingBox}>
-              <ActivityIndicator size="large" color="#34C26A" />
-              <Text style={styles.waitingText}>Validando tu enlace de recuperación...</Text>
-            </View>
-          )}
-
-          {done && (
-            <View style={styles.successBox}>
-              <Text style={styles.successEmoji}>✅</Text>
-              <Text style={styles.successTitle}>Contraseña actualizada</Text>
-              <Text style={styles.successText}>
-                Ya puedes iniciar sesión con tu nueva contraseña.
+    <View style={styles.container}>
+      <PillBackground />
+      <KeyboardAwareScreen contentContainerStyle={styles.scroll}>
+        {!done && (
+          <Reveal variant="up" delay={60}>
+            <View style={styles.header}>
+              <Text style={styles.title}>{t.auth.newPassword}</Text>
+              <Text style={styles.subtitle}>
+                {showWaiting ? t.auth.verifyingLink : t.auth.chooseSecurePassword}
               </Text>
-              <TouchableOpacity style={styles.primaryButton} onPress={goToLogin}>
-                <Text style={styles.primaryButtonText}>Ir al inicio de sesión</Text>
-              </TouchableOpacity>
             </View>
-          )}
+          </Reveal>
+        )}
 
-          {!showWaiting && !done && (
-            <View style={styles.form}>
-              {!sessionReady && error && (
-                <>
+        {showWaiting && (
+          <Reveal variant="fade" delay={120}>
+            <View style={styles.waitingBox}>
+              <ActivityIndicator size="large" color={theme.colors.accent} />
+              <Text style={styles.waitingText}>{t.auth.validatingLink}</Text>
+            </View>
+          </Reveal>
+        )}
+
+        {done && (
+          <View style={styles.successBox}>
+            <Reveal variant="up" delay={60}>
+              <View style={styles.successBadge}>
+                <CheckCircle2 color={theme.colors.white} size={48} />
+              </View>
+            </Reveal>
+            <Reveal index={1} delay={120}>
+              <Text style={styles.successTitle}>{t.auth.passwordUpdated}</Text>
+            </Reveal>
+            <Reveal index={2} delay={160}>
+              <Text style={styles.successText}>{t.auth.canLoginNow}</Text>
+            </Reveal>
+            <Reveal index={3} delay={200} style={styles.stretch}>
+              <PressableScale style={styles.primaryButton} onPress={goToLogin}>
+                <Text style={styles.primaryButtonText}>{t.auth.goToLogin}</Text>
+              </PressableScale>
+            </Reveal>
+          </View>
+        )}
+
+        {!showWaiting && !done && (
+          <View style={styles.form}>
+            {!sessionReady && error && (
+              <>
+                <Reveal variant="fade">
                   <Text style={styles.errorText}>{error}</Text>
-                  <TouchableOpacity
+                </Reveal>
+                <Reveal index={1} delay={120}>
+                  <PressableScale
                     style={styles.primaryButton}
                     onPress={() => router.replace('/auth/forgot-password')}
                   >
-                    <Text style={styles.primaryButtonText}>Solicitar nuevo enlace</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+                    <Text style={styles.primaryButtonText}>{t.auth.requestNewLink}</Text>
+                  </PressableScale>
+                </Reveal>
+              </>
+            )}
 
-              {sessionReady && (
-                <>
-                  <View style={styles.inputWrapper}>
-                    <Lock size={20} color="rgba(255,255,255,0.6)" />
+            {sessionReady && (
+              <>
+                <Reveal index={1} delay={120}>
+                  <View style={[styles.inputWrapper, focused === 'password' && styles.inputFocused]}>
+                    <Lock
+                      size={20}
+                      color={focused === 'password' ? theme.colors.accent : theme.colors.textMuted}
+                    />
                     <TextInput
                       style={styles.input}
-                      placeholder="Nueva contraseña"
-                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      placeholder={t.auth.newPassword}
+                      placeholderTextColor={theme.colors.textMuted}
                       secureTextEntry
                       value={password}
                       onChangeText={setPassword}
                       editable={!loading}
+                      onFocus={() => setFocused('password')}
+                      onBlur={() => setFocused(null)}
                     />
                   </View>
+                </Reveal>
 
-                  <View style={styles.inputWrapper}>
-                    <Lock size={20} color="rgba(255,255,255,0.6)" />
+                <Reveal index={2} delay={160}>
+                  <View style={[styles.inputWrapper, focused === 'confirm' && styles.inputFocused]}>
+                    <Lock
+                      size={20}
+                      color={focused === 'confirm' ? theme.colors.accent : theme.colors.textMuted}
+                    />
                     <TextInput
                       style={styles.input}
-                      placeholder="Confirmar contraseña"
-                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      placeholder={t.auth.confirmPassword}
+                      placeholderTextColor={theme.colors.textMuted}
                       secureTextEntry
                       value={confirm}
                       onChangeText={setConfirm}
                       editable={!loading}
+                      onFocus={() => setFocused('confirm')}
+                      onBlur={() => setFocused(null)}
                     />
                   </View>
+                </Reveal>
 
-                  {error && <Text style={styles.errorText}>{error}</Text>}
+                {error && (
+                  <Reveal variant="fade">
+                    <Text style={styles.errorText}>{error}</Text>
+                  </Reveal>
+                )}
 
-                  <TouchableOpacity
+                <Reveal index={3} delay={200}>
+                  <PressableScale
                     style={[styles.primaryButton, loading && styles.buttonDisabled]}
                     onPress={handleSubmit}
                     disabled={loading}
                   >
                     {loading ? (
-                      <ActivityIndicator color="#106B4F" />
+                      <ActivityIndicator color={theme.colors.white} />
                     ) : (
-                      <Text style={styles.primaryButtonText}>Actualizar contraseña</Text>
+                      <Text style={styles.primaryButtonText}>{t.auth.updatePassword}</Text>
                     )}
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+                  </PressableScale>
+                </Reveal>
+              </>
+            )}
+          </View>
+        )}
+      </KeyboardAwareScreen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingTop: 80 },
-  header: { marginBottom: 40 },
-  title: { fontFamily: 'Poppins-Bold', fontSize: 32, color: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: theme.colors.bg },
+  scroll: { flexGrow: 1, padding: theme.spacing.xxl, paddingTop: 80 },
+  header: { marginBottom: theme.spacing.huge },
+  title: {
+    ...theme.text.display,
+    color: theme.colors.textPrimary,
+  },
   subtitle: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 8,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.sm,
   },
-  waitingBox: { alignItems: 'center', gap: 16, paddingTop: 40 },
+  waitingBox: { alignItems: 'center', gap: theme.spacing.lg, paddingTop: theme.spacing.huge },
   waitingText: {
-    fontFamily: 'DMSans-Medium',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    ...theme.text.bodyMedium,
+    color: theme.colors.textSecondary,
   },
-  form: { gap: 16 },
+  form: { gap: theme.spacing.lg },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 54,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.lg,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  inputFocused: {
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
   },
   input: {
     flex: 1,
-    fontFamily: 'DMSans-Regular',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontFamily: theme.font.body,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    height: '100%',
   },
   errorText: {
-    fontFamily: 'DMSans-Medium',
+    ...theme.text.bodyMedium,
     fontSize: 13,
-    color: '#FF6B6B',
+    color: theme.colors.danger,
     textAlign: 'center',
   },
   primaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    height: 56,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: theme.spacing.xs,
+    ...theme.shadow.accent,
   },
   buttonDisabled: { opacity: 0.7 },
   primaryButtonText: {
-    fontFamily: 'Poppins-Bold',
+    fontFamily: theme.font.bold,
     fontSize: 16,
-    color: '#106B4F',
+    color: theme.colors.white,
+    letterSpacing: 0.3,
   },
-  successBox: { alignItems: 'center', gap: 12, paddingHorizontal: 16 },
-  successEmoji: { fontSize: 64 },
+  successBox: {
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.huge,
+  },
+  successBadge: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+    ...theme.shadow.accent,
+  },
   successTitle: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 22,
-    color: '#FFFFFF',
+    ...theme.text.h1,
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
   },
   successText: {
-    fontFamily: 'DMSans-Regular',
+    ...theme.text.body,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.85)',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 16,
+    marginBottom: theme.spacing.lg,
   },
+  stretch: { alignSelf: 'stretch' },
 });

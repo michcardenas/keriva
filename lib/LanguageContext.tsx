@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations } from './translations';
 
@@ -8,6 +8,33 @@ interface LanguageContextType {
   language: LanguageCode;
   setLanguage: (lang: LanguageCode) => void;
   t: typeof translations.ES;
+}
+
+/**
+ * Deep-merge del idioma seleccionado sobre el español base. El español (ES)
+ * es la traducción más completa y actúa como respaldo: si un idioma no define
+ * una clave, se muestra el texto en español en vez de `undefined`. Esto permite
+ * ir internacionalizando la app sin tener que traducir las 20 lenguas de golpe.
+ */
+function deepMerge<T>(base: T, override: any): T {
+  if (Array.isArray(base)) {
+    return (Array.isArray(override) ? override : base) as T;
+  }
+  if (base === null || typeof base !== 'object') {
+    return (override ?? base) as T;
+  }
+  const out: any = { ...base };
+  for (const key of Object.keys(base as object)) {
+    if (override && key in override) {
+      out[key] = deepMerge((base as any)[key], override[key]);
+    }
+  }
+  if (override) {
+    for (const key of Object.keys(override)) {
+      if (!(key in out)) out[key] = override[key];
+    }
+  }
+  return out as T;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -42,6 +69,13 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Memoiza el merge para no recalcularlo en cada render; solo cambia cuando
+  // cambia el idioma. ES es la base; el idioma activo se superpone encima.
+  const t = useMemo(
+    () => deepMerge(translations.ES, translations[language]),
+    [language],
+  );
+
   if (!isLoaded) {
     return null;
   }
@@ -51,7 +85,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       value={{
         language,
         setLanguage,
-        t: translations[language],
+        t,
       }}
     >
       {children}
