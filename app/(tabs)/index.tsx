@@ -21,6 +21,7 @@ import Reveal from '@/components/ui/Reveal';
 import PillBackground from '@/components/ui/PillBackground';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
+import { capture } from '@/lib/analytics';
 
 const CATEGORIES: Array<{ label: string; icon: any; color: string }> = [
   { label: 'Todo', icon: Pill, color: theme.colors.accent },
@@ -94,6 +95,14 @@ export default function SearchScreen() {
     }
 
     searchTimeoutRef.current = setTimeout(() => {
+      // Analítica: solo el length del query y la categoría — nunca el texto
+      // (puede contener nombre propio o condición de salud).
+      if (trimmed.length >= 2) {
+        capture('search_med', {
+          query_length: trimmed.length,
+          category: selectedCategory,
+        });
+      }
       runSearch(trimmed);
     }, 350);
 

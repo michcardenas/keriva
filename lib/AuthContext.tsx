@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { getPerfil, type PerfilCompleto } from '@/lib/api/perfiles';
+import { clearUser as sentryClearUser } from '@/lib/sentry';
+import { clearIdentity as analyticsClearIdentity } from '@/lib/analytics';
 
 type AuthContextValue = {
   session: Session | null;
@@ -86,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         setPerfil(null);
+        sentryClearUser();
+        analyticsClearIdentity();
         return;
       }
 

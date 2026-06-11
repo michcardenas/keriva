@@ -19,6 +19,7 @@ import Reveal from '@/components/ui/Reveal';
 import PillBackground from '@/components/ui/PillBackground';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
+import { capture } from '@/lib/analytics';
 
 const AVAILABILITY_DAYS = [
   { day: 'L', available: true },
@@ -79,6 +80,8 @@ export default function DetailScreen() {
     getUserLocation().then((loc) => {
       if (!cancelled) setUserLoc({ lat: loc.lat, lng: loc.lng });
     });
+    const medId = typeof params.id === 'string' ? params.id : null;
+    if (medId) capture('pharmacy_view', { medication_id: medId });
     return () => {
       cancelled = true;
     };

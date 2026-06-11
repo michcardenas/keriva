@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Mail, Lock, User, Phone, IdCard, Eye, EyeOff } from 'lucide-react-native';
 import { signUpWithEmail } from '@/lib/api/auth';
+import { capture } from '@/lib/analytics';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
 import PressableScale from '@/components/ui/PressableScale';
@@ -55,6 +56,7 @@ export default function RegisterScreen() {
       setError(result.error.message);
       return;
     }
+    capture('signup_completed', { needs_confirmation: result.data.needsConfirmation });
     if (result.data.needsConfirmation) {
       router.replace({
         pathname: '/auth/verify',

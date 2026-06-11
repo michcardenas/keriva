@@ -20,8 +20,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { initSentry } from '@/lib/sentry';
+import { initAnalytics } from '@/lib/analytics';
 
 SplashScreen.preventAutoHideAsync();
+
+// Idempotentes — registran el global error handler y el distinct_id anónimo.
+initSentry();
+initAnalytics();
 
 export default function RootLayout() {
   useFrameworkReady();

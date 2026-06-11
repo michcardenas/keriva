@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { capture } from '@/lib/analytics';
 
 // =====================================================================
 // Reservas — el usuario reserva un producto en una sucursal; la farmacia
@@ -106,7 +107,13 @@ export async function createReserva(
     .select('id')
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
-  return { ok: true, id: (data as { id: string } | null)?.id };
+  const id = (data as { id: string } | null)?.id;
+  capture('reserve_created', {
+    sucursal_id: input.sucursalId,
+    producto_id: input.productoId,
+    cantidad: input.cantidad ?? 1,
+  });
+  return { ok: true, id };
 }
 
 /** Cambia el estado (confirmar = venta, rechazar, cancelar). */
@@ -119,5 +126,8 @@ export async function setEstadoReserva(
     .update({ estado, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) return { ok: false, error: error.message };
+  if (estado === 'confirmada') {
+    capture('reserve_confirmed', { reserva_id: id });
+  }
   return { ok: true };
 }
