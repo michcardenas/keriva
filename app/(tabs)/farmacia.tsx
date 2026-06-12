@@ -11,6 +11,7 @@ import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import { getSucursales } from '@/lib/api/sucursales';
 import { getReservasFarmacia } from '@/lib/api/reservas';
 import { getMiFarmaciaActiva } from '@/lib/api/farmacias';
+import { getMiAsignacion, type SucursalAsignada } from '@/lib/api/encargados';
 import { signOut } from '@/lib/api/auth';
 
 type Card = {
@@ -41,17 +42,25 @@ export default function FarmaciaHubScreen() {
   const [numPendientes, setNumPendientes] = useState<number | null>(null);
   // L2: estado de gating. null = aún cargando, true = activa, false = bloqueada.
   const [activa, setActiva] = useState<boolean | null>(null);
+  // F4-gating: si NO es dueño pero está en cuentas_sucursal, lista de sus
+  // sucursales asignadas. Habilita la vista limitada del encargado.
+  const [encargadoSucs, setEncargadoSucs] = useState<SucursalAsignada[] | null>(null);
 
   const load = useCallback(async () => {
-    if (!farmaciaId) return;
-    const [suc, pend, esActiva] = await Promise.all([
-      getSucursales(farmaciaId),
-      getReservasFarmacia('pendiente'),
-      getMiFarmaciaActiva(farmaciaId),
-    ]);
-    setNumSucursales(suc.length);
-    setNumPendientes(pend.length);
-    setActiva(esActiva);
+    if (farmaciaId) {
+      const [suc, pend, esActiva] = await Promise.all([
+        getSucursales(farmaciaId),
+        getReservasFarmacia('pendiente'),
+        getMiFarmaciaActiva(farmaciaId),
+      ]);
+      setNumSucursales(suc.length);
+      setNumPendientes(pend.length);
+      setActiva(esActiva);
+      return;
+    }
+    // Sin farmacia propia → ¿es encargado?
+    const a = await getMiAsignacion();
+    setEncargadoSucs(a.sucursales);
   }, [farmaciaId]);
 
   async function handleLogout() {
@@ -73,6 +82,72 @@ export default function FarmaciaHubScreen() {
     );
   }
   if (rol !== 'farmacia') {
+    // F4-gating: el usuario fue invitado como encargado. Mostramos versión
+    // limitada con sus sucursales asignadas.
+    if (encargadoSucs && encargadoSucs.length > 0) {
+      return (
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+          <PillBackground opacity={0.55} />
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.xl, paddingBottom: insets.bottom + 40 }}>
+            <Text style={styles.title}>Mi sucursal</Text>
+            <Text style={styles.subtitle}>
+              Eres encargado de {encargadoSucs.length === 1 ? 'esta sucursal' : `${encargadoSucs.length} sucursales`}
+            </Text>
+
+            {encargadoSucs.map((s) => (
+              <View key={s.sucursalId} style={styles.encCard}>
+                <View style={styles.encHeader}>
+                  <Store size={20} color={theme.colors.accent} />
+                  <Text style={styles.encNombre}>{s.nombre}</Text>
+                </View>
+                {!!s.direccion && <Text style={styles.encDir}>{s.direccion}{s.ciudad ? ` · ${s.ciudad}` : ''}</Text>}
+
+                <View style={styles.encActions}>
+                  <PressableScale
+                    style={styles.encActionBtn}
+                    onPress={() => router.push({
+                      pathname: '/farmacia/inventario' as any,
+                      params: { sucursalId: s.sucursalId, nombre: s.nombre },
+                    })}
+                  >
+                    <Store size={16} color={theme.colors.accent} />
+                    <Text style={styles.encActionText}>Inventario</Text>
+                  </PressableScale>
+                  <PressableScale
+                    style={styles.encActionBtn}
+                    onPress={() => router.push('/farmacia/reservas')}
+                  >
+                    <ShoppingBag size={16} color={theme.colors.accent} />
+                    <Text style={styles.encActionText}>Reservas</Text>
+                  </PressableScale>
+                  <PressableScale
+                    style={styles.encActionBtn}
+                    onPress={() => router.push({
+                      pathname: '/farmacia/horarios' as any,
+                      params: { sucursalId: s.sucursalId, nombre: s.nombre },
+                    })}
+                  >
+                    <Settings size={16} color={theme.colors.accent} />
+                    <Text style={styles.encActionText}>Horarios</Text>
+                  </PressableScale>
+                </View>
+              </View>
+            ))}
+
+            <View style={styles.encBanner}>
+              <Text style={styles.encBannerText}>
+                Como encargado solo puedes gestionar las sucursales que te asignaron.
+                Pídele al dueño que te dé acceso a otras si necesitas.
+              </Text>
+            </View>
+
+            <PressableScale style={styles.encLogout} onPress={handleLogout}>
+              <Text style={styles.encLogoutText}>Cerrar sesión</Text>
+            </PressableScale>
+          </ScrollView>
+        </View>
+      );
+    }
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
         <PillBackground opacity={0.55} />
@@ -183,6 +258,37 @@ const styles = StyleSheet.create({
   muted: { ...theme.text.body, color: theme.colors.textSecondary, textAlign: 'center', paddingHorizontal: theme.spacing.xl },
   title: { ...theme.text.h1, color: theme.colors.textPrimary, marginTop: theme.spacing.sm },
   subtitle: { ...theme.text.body, color: theme.colors.textSecondary, marginTop: 2 },
+
+  // F4-gating — vista limitada del encargado
+  encCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+    ...theme.shadow.card,
+  },
+  encHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  encNombre: { ...theme.text.h3, color: theme.colors.textPrimary },
+  encDir: { ...theme.text.caption, color: theme.colors.textSecondary, marginTop: 4 },
+  encActions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.md },
+  encActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.accentSofter,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1, borderColor: theme.colors.accentSoft,
+  },
+  encActionText: { fontFamily: theme.font.bodyBold, fontSize: 12, color: theme.colors.accent },
+  encBanner: {
+    backgroundColor: theme.colors.warningSoft,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    marginTop: theme.spacing.lg,
+    borderWidth: 1, borderColor: theme.colors.warningSoft,
+  },
+  encBannerText: { ...theme.text.caption, color: theme.colors.warning, lineHeight: 18 },
+  encLogout: { alignItems: 'center', paddingVertical: theme.spacing.lg, marginTop: theme.spacing.md },
+  encLogoutText: { ...theme.text.bodyMedium, fontSize: 13, color: theme.colors.danger, textDecorationLine: 'underline' },
 
   statsRow: { flexDirection: 'row', gap: theme.spacing.md, marginTop: theme.spacing.xl },
   stat: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: theme.spacing.lg, ...theme.shadow.card },

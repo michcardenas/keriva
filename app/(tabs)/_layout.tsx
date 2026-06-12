@@ -1,10 +1,12 @@
 import { Tabs } from 'expo-router';
 import { Search, Map, Camera, User, Store } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useAuth } from '@/lib/AuthContext';
 import { featureFlags } from '@/lib/feature-flags';
 import { theme } from '@/lib/theme';
+import { getMiAsignacion } from '@/lib/api/encargados';
 
 export default function TabLayout() {
   const { t } = useLanguage();
@@ -12,6 +14,20 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const rol = perfil?.rol ?? 'usuario';
   const isGuest = !session;
+
+  // F4-gating: si el usuario no es dueño (rol=farmacia) pero tiene
+  // asignación como encargado en cuentas_sucursal, mostramos igual el tab
+  // "Mi farmacia" — el hub tiene su propia rama para encargado.
+  const [esEncargado, setEsEncargado] = useState(false);
+  useEffect(() => {
+    if (!session || rol === 'farmacia') return;
+    let cancelled = false;
+    getMiAsignacion().then((a) => {
+      if (!cancelled) setEsEncargado(a.esEncargado);
+    });
+    return () => { cancelled = true; };
+  }, [session, rol]);
+  const showFarmaciaTab = rol === 'farmacia' || esEncargado;
 
   return (
     <Tabs
@@ -78,8 +94,8 @@ export default function TabLayout() {
         options={{
           title: t.nav.myPharmacy,
           tabBarIcon: ({ size, color }) => <Store size={22} color={color} />,
-          // Hub de gestión, solo para el rol farmacia.
-          href: rol === 'farmacia' ? '/(tabs)/farmacia' : null,
+          // Hub de gestión: dueño (rol=farmacia) o encargado asignado.
+          href: showFarmaciaTab ? '/(tabs)/farmacia' : null,
         }}
       />
       <Tabs.Screen

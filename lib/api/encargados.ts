@@ -62,3 +62,57 @@ export async function quitarEncargado(id: string): Promise<{ ok: boolean; error?
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+// =====================================================================
+// F4-gating: asignación del usuario actual como encargado
+// =====================================================================
+// La RLS de cuentas_sucursal deja al propio user_id leer sus filas, así que
+// esto funciona con sesión normal. Devolvemos las sucursales ya resueltas
+// (id, nombre, farmacia_id) para que el hub farmacia pueda mostrar la lista
+// sin un segundo round-trip.
+// =====================================================================
+
+export type SucursalAsignada = {
+  asignacionId: string;
+  sucursalId: string;
+  nombre: string;
+  direccion: string | null;
+  ciudad: string | null;
+  farmaciaId: number;
+};
+
+export type MiAsignacion = {
+  esEncargado: boolean;
+  sucursales: SucursalAsignada[];
+  farmaciaId: number | null; // siempre la primera (asumimos misma farmacia)
+};
+
+export async function getMiAsignacion(): Promise<MiAsignacion> {
+  const { data, error } = await supabase
+    .from('cuentas_sucursal')
+    .select('id, sucursales(id, nombre, direccion, ciudad, farmacia_id, activa)')
+    .order('created_at', { ascending: true });
+  if (error || !data) return { esEncargado: false, sucursales: [], farmaciaId: null };
+
+  const sucursales: SucursalAsignada[] = [];
+  for (const row of data as any[]) {
+    const sucs = Array.isArray(row.sucursales) ? row.sucursales : row.sucursales ? [row.sucursales] : [];
+    for (const s of sucs) {
+      if (!s?.activa) continue;
+      sucursales.push({
+        asignacionId: row.id,
+        sucursalId: s.id,
+        nombre: s.nombre,
+        direccion: s.direccion ?? null,
+        ciudad: s.ciudad ?? null,
+        farmaciaId: s.farmacia_id,
+      });
+    }
+  }
+
+  return {
+    esEncargado: sucursales.length > 0,
+    sucursales,
+    farmaciaId: sucursales[0]?.farmaciaId ?? null,
+  };
+}

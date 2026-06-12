@@ -15,6 +15,7 @@ import {
   Plus,
   Moon,
   Sun,
+  BellRing,
 } from 'lucide-react-native';
 import { useColorMode } from '@/lib/ThemeContext';
 import { useCallback, useEffect, useState } from 'react';
@@ -381,9 +382,13 @@ export default function ProfileScreen() {
           </View>
         </Reveal>
 
-        {/* Points hero card */}
+        {/* Points hero card → abre Keriva Wallet */}
         <Reveal variant="up" delay={100}>
-          <View style={styles.pointsCard}>
+          <PressableScale
+            style={styles.pointsCard}
+            onPress={() => router.push('/wallet' as any)}
+            scaleTo={0.98}
+          >
             <View style={styles.pointsIconBubble}>
               <Award size={28} color={theme.colors.accent} />
             </View>
@@ -392,9 +397,9 @@ export default function ProfileScreen() {
               <Text style={styles.pointsValue}>{points.toLocaleString('es-DO')}</Text>
             </View>
             <View style={styles.pointsGiftBubble}>
-              <Gift size={20} color={theme.colors.gold} />
+              <ChevronRight size={20} color={theme.colors.accent} />
             </View>
-          </View>
+          </PressableScale>
         </Reveal>
 
         {dataError && (
@@ -457,6 +462,25 @@ export default function ProfileScreen() {
             </Reveal>
           ) : null
         )}
+
+        {/* R5: Recordatorios de hoy — atajo */}
+        <Reveal variant="up" delay={160}>
+          <PressableScale
+            style={styles.familiaCta}
+            onPress={() => router.push('/care/hoy' as any)}
+          >
+            <View style={styles.ctaIconBubble}>
+              <BellRing size={22} color={theme.colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ctaTitle}>Recordatorios de hoy</Text>
+              <Text style={styles.ctaText}>
+                Próximas tomas de toda tu familia, ordenadas por hora.
+              </Text>
+            </View>
+            <ChevronRight size={20} color={theme.colors.accent} />
+          </PressableScale>
+        </Reveal>
 
         {/* Mi familia (Multi-Perfil) */}
         <Reveal variant="up" delay={180}>

@@ -34,6 +34,13 @@
           "photosPermission": "Keriva necesita acceso a tus fotos para que puedas adjuntar la foto del precio reportado.",
           "cameraPermission": "Keriva necesita acceso a la cámara para que puedas tomar una foto del precio en la farmacia."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/adaptive-icon.png",
+          "color": "#106B4F"
+        }
       ]
     ],
     "android": {
@@ -48,7 +55,9 @@
         }
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ]
     },
     "splash": {

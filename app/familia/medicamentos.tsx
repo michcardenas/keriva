@@ -39,6 +39,14 @@ import {
   type ProductoPediatrico,
 } from '@/lib/api/dosis';
 import { hasActiveDisclaimer } from '@/lib/api/disclaimer';
+import {
+  scheduleMedicamento as scheduleMed,
+  cancelMedicamento as cancelMed,
+  rescheduleAll as rescheduleAllMeds,
+  hasPermissions as hasNotifPermissions,
+  requestPermissions as requestNotifPermissions,
+  type ScheduleableMed,
+} from '@/lib/notifications';
 import { useLanguage } from '@/lib/LanguageContext';
 import { theme } from '@/lib/theme';
 import PressableScale from '@/components/ui/PressableScale';
@@ -124,6 +132,23 @@ export default function MedicamentosScreen() {
       } else {
         setNeedsDisclaimer(false);
       }
+
+      // R3 — Mantenimiento de recordatorios: si ya hay permiso, reprograma
+      // las próximas tomas. No-op en web y sin permiso (no molesta al usuario).
+      if (p && (await hasNotifPermissions())) {
+        const scheduleable: ScheduleableMed[] = m
+          .filter((x) => x.activo)
+          .map((x) => ({
+            id: x.id,
+            perfilId: x.perfilId,
+            nombreDisplay: x.nombreDisplay,
+            frecuenciaTipo: x.frecuenciaTipo,
+            frecuenciaValor: x.frecuenciaValor,
+            horasToma: x.horasToma,
+            diasSemana: x.diasSemana,
+          }));
+        void rescheduleAllMeds(scheduleable, { [p.id]: p.nombre ?? '' });
+      }
     } catch (e: any) {
       setError(e?.message ?? t.familia.loadGenericError);
     } finally {
@@ -198,6 +223,24 @@ export default function MedicamentosScreen() {
         Alert.alert(t.familia.errorTitle, res.error ?? t.familia.addError);
         return;
       }
+      // R3+R4 — pedimos permiso de notificaciones la primera vez que el
+      // usuario crea un medicamento. Si acepta, programamos los avisos del
+      // nuevo med. Si rechaza, la app sigue funcionando sin recordatorios.
+      const granted = (await hasNotifPermissions()) || (await requestNotifPermissions());
+      if (granted && res.med) {
+        void scheduleMed(
+          {
+            id: res.med.id,
+            perfilId: res.med.perfilId,
+            nombreDisplay: res.med.nombreDisplay,
+            frecuenciaTipo: res.med.frecuenciaTipo,
+            frecuenciaValor: res.med.frecuenciaValor,
+            horasToma: res.med.horasToma,
+            diasSemana: res.med.diasSemana,
+          },
+          perfil.nombre ?? '',
+        );
+      }
       setAddOpen(false);
       await load();
     } finally {
@@ -214,6 +257,8 @@ export default function MedicamentosScreen() {
           Alert.alert(t.familia.errorTitle, res.error ?? t.familia.deleteError);
           return;
         }
+        // R3 — cancela los recordatorios programados del medicamento.
+        void cancelMed(med.id);
         await load();
       };
       if (Platform.OS === 'web') {

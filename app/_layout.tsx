@@ -23,6 +23,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ThemeProvider, useColorMode } from '@/lib/ThemeContext';
 import { initSentry } from '@/lib/sentry';
 import { initAnalytics } from '@/lib/analytics';
+import { setupNotificationHandler } from '@/lib/notifications';
 import ConsentModal from '@/components/ConsentModal';
 
 SplashScreen.preventAutoHideAsync();
@@ -30,6 +31,7 @@ SplashScreen.preventAutoHideAsync();
 // Idempotentes — registran el global error handler y el distinct_id anónimo.
 initSentry();
 initAnalytics();
+setupNotificationHandler();
 
 export default function RootLayout() {
   useFrameworkReady();
@@ -170,6 +172,8 @@ function RootNavigator() {
         <Stack.Screen name="farmacia/horarios" />
         <Stack.Screen name="farmacia/encargados" />
         <Stack.Screen name="resenas/[farmaciaId]" />
+        <Stack.Screen name="wallet" />
+        <Stack.Screen name="care/hoy" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <ConsentModal
