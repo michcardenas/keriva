@@ -672,6 +672,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.overlay,
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   modalCard: {
     backgroundColor: theme.colors.surface,
@@ -679,6 +680,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: theme.radius.xl,
     paddingBottom: theme.spacing.lg,
     maxHeight: '88%',
+    width: '100%',
+    maxWidth: 480,
   },
   modalHeader: {
     flexDirection: 'row',

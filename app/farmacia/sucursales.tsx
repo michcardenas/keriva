@@ -373,8 +373,8 @@ const styles = StyleSheet.create({
   delConfirm: { width: 'auto', paddingHorizontal: theme.spacing.md, backgroundColor: theme.colors.danger },
   delConfirmText: { ...theme.text.button, color: theme.colors.white, fontSize: 12 },
 
-  modalBackdrop: { flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: theme.colors.bg, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, padding: theme.spacing.lg, maxHeight: '90%' },
+  modalBackdrop: { flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end', alignItems: 'center' },
+  modalCard: { backgroundColor: theme.colors.bg, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, padding: theme.spacing.lg, maxHeight: '90%', width: '100%', maxWidth: 480 },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.md },
   modalTitle: { ...theme.text.h2, color: theme.colors.textPrimary },
   field: { marginBottom: theme.spacing.md },

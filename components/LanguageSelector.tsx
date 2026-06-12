@@ -85,6 +85,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
@@ -92,6 +93,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingBottom: 40,
     maxHeight: '80%',
+    width: '100%',
+    maxWidth: 480,
   },
   modalHeader: {
     flexDirection: 'row',

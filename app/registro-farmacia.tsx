@@ -879,6 +879,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.overlay,
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: theme.colors.surface,
@@ -887,6 +888,8 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xl,
     maxHeight: '60%',
     overflow: 'hidden',
+    width: '100%',
+    maxWidth: 480,
   },
   modalHandle: {
     alignSelf: 'center',
