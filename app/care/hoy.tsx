@@ -8,7 +8,8 @@ import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import PillBackground from '@/components/ui/PillBackground';
 import PressableScale from '@/components/ui/PressableScale';
 import Reveal from '@/components/ui/Reveal';
-import { theme } from '@/lib/theme';
+import { useTheme } from '@/lib/ThemeContext';
+import type { Theme } from '@/lib/theme';
 import { listFamilia, type FamiliaDashboardRow } from '@/lib/api/familia';
 import { listMedicamentosByPerfil } from '@/lib/api/care';
 import { computeUpcomingDoses, type ScheduleableMed } from '@/lib/notifications';
@@ -54,6 +55,8 @@ export default function RecordatoriosHoyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [loading, setLoading] = useState(true);
   const [doses, setDoses] = useState<Dose[]>([]);
   const [perfilesCount, setPerfilesCount] = useState(0);
@@ -316,7 +319,7 @@ export default function RecordatoriosHoyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
   center: { padding: theme.spacing.huge, alignItems: 'center' },
 

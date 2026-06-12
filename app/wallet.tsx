@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Share, ActivityIndicator, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -10,7 +10,8 @@ import AuthRequiredPlaceholder from '@/components/AuthRequiredPlaceholder';
 import PillBackground from '@/components/ui/PillBackground';
 import PressableScale from '@/components/ui/PressableScale';
 import Reveal from '@/components/ui/Reveal';
-import { theme } from '@/lib/theme';
+import { useTheme } from '@/lib/ThemeContext';
+import type { Theme } from '@/lib/theme';
 import { getMyPoints } from '@/lib/api/precios';
 import { getMisReservas } from '@/lib/api/reservas';
 import { ganarPtsCompartir } from '@/lib/api/wallet';
@@ -35,6 +36,8 @@ export default function WalletScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, perfil, session } = useAuth();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [loading, setLoading] = useState(true);
   const [puntos, setPuntos] = useState(0);
   const [ahorro, setAhorro] = useState<AhorroEstimado>({ centro: 0, min: 0, max: 0, base: 'vacio', reservas: 0 });
@@ -307,7 +310,7 @@ export default function WalletScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
   center: { padding: theme.spacing.huge, alignItems: 'center' },
 

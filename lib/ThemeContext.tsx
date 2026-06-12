@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { themeForMode, type Theme } from '@/lib/theme';
 
 // =====================================================================
 // ThemeContext — modo claro/oscuro persistente (T1)
@@ -66,4 +67,20 @@ export function useColorMode(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useColorMode must be used within ThemeProvider');
   return ctx;
+}
+
+/**
+ * Devuelve el theme completo (colors+font+spacing+...) adaptado al modo
+ * activo. Las pantallas que quieran responder a dark mode hacen:
+ *
+ *   const theme = useTheme();
+ *   const styles = useMemo(() => StyleSheet.create({ ... }), [theme]);
+ *
+ * El export estático `theme` de lib/theme.ts (modo light) sigue siendo
+ * válido para pantallas que aún no migraron — todo el resto de la app sigue
+ * en light hasta que se refactoricen una por una.
+ */
+export function useTheme(): Theme {
+  const { mode } = useColorMode();
+  return useMemo(() => themeForMode(mode), [mode]);
 }

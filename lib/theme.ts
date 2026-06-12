@@ -256,6 +256,65 @@ export const theme = {
 export type Theme = typeof theme;
 
 // ---------------------------------------------------------------------
+// 8. Paleta DARK — mapeo desde la light a los tokens night*
+// ---------------------------------------------------------------------
+// Mantiene la misma forma que `palette`. Solo cambian los tokens visibles
+// (fondos, superficies, texto, bordes, acento sobrio para fondo oscuro).
+// Los semánticos (success/danger/warning/info) se mantienen para no
+// canibalizar el lenguaje de estados.
+const paletteDark = {
+  ...palette,
+
+  // Fondos / superficies
+  bg: palette.nightBg,
+  bgSecondary: palette.nightBg2,
+  surface: palette.nightSurface,
+  surfaceMuted: palette.nightSurfaceAlt,
+
+  // Texto
+  textPrimary: palette.nightText,
+  textSecondary: palette.nightTextSoft,
+  textMuted: palette.nightTextFaint,
+  textInverse: palette.nightBg,
+
+  // Acento sobrio para dark (verde más suave, mejor contraste)
+  accent: palette.nightAccent,
+  accentDark: palette.neonDim,
+  accentDarker: palette.brandGreen,
+  accentSoft: palette.nightAccentSoft,
+  accentSofter: palette.nightAccentSoft,
+  accentText: palette.nightBg,
+
+  // Bordes
+  border: palette.nightBorder,
+  borderLight: palette.nightHairline,
+
+  // Overlays más oscuros sobre fondos ya oscuros
+  overlay: 'rgba(0, 0, 0, 0.65)',
+  scrim: 'rgba(0, 0, 0, 0.5)',
+
+  // Semánticos: mantenemos pero suavizamos los soft para que no quemen
+  // sobre el fondo oscuro.
+  successSoft: 'rgba(21, 168, 98, 0.18)',
+  dangerSoft: 'rgba(229, 72, 77, 0.22)',
+  warningSoft: 'rgba(242, 153, 74, 0.22)',
+  infoSoft: 'rgba(46, 144, 250, 0.22)',
+} as const;
+
+export const themeDark = {
+  ...theme,
+  colors: paletteDark,
+} as const;
+
+/** Devuelve el theme correspondiente al modo. */
+export function themeForMode(mode: 'light' | 'dark'): Theme {
+  // Cast: themeDark tiene la MISMA forma que theme pero con valores diferentes;
+  // los tipos literales de colores no son útiles aquí (un componente que lee
+  // theme.colors.bg solo necesita un string).
+  return (mode === 'dark' ? themeDark : theme) as unknown as Theme;
+}
+
+// ---------------------------------------------------------------------
 // Compat hacia atrás: objeto `colors` legado usado por algunos componentes.
 // ---------------------------------------------------------------------
 export const colors = {
